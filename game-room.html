@@ -121,10 +121,10 @@
     <input type="hidden" name="cardNumbers" id="claim_cardNumbers">
     <input type="hidden" name="notes" id="claim_notes" value="Bingo claim via game-room">
     <input type="hidden" name="imageData" id="claim_imageData">
-    <input type="hidden" name="secret" id="claim_secret" value=""><!-- leave blank unless your script requires it -->
+    <input type="hidden" name="secret" id="claim_secret" value="">
   </form>
 
-  <!-- Email relay (kept) -->
+  <!-- Kept email relay -->
   <form id="winnerForm" action="https://formsubmit.co/bingo@alabamabluesman.com" method="POST" style="display:none"></form>
 
   <script>
@@ -132,11 +132,11 @@
     /* knobs */
     var TIKTOK_HANDLE='ricpatton';
     var LIVE_URL='https://www.tiktok.com/@'+TIKTOK_HANDLE+'/live';
-    var ATTACH_IMAGE=false; // keep false till we see rows land; turn true later
+    var ATTACH_IMAGE=false; // flip to true later once rows are landing steady
     var IMG_SIZE=600, IMG_FORMAT='image/jpeg', IMG_QUALITY=0.82;
     var REDIRECT_TO_LIVE=true, REDIRECT_DELAY_MS=700;
     var STORAGE_KEY='bingo_card_last';
-    var WEBHOOK_SECRET=''; // fill only if Apps Script checks a secret
+    var WEBHOOK_SECRET=''; // only if your Apps Script checks a secret
 
     /* helpers & state */
     function byId(id){ return document.getElementById(id); }
@@ -265,4 +265,3 @@
   </script>
 </body>
 </html>
-
