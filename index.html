@@ -1,0 +1,422 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Build Your Fat Mule Bingo Card</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<style>
+  /* Base */
+  #billiobingo *{box-sizing:border-box;font-family:Arial,system-ui,sans-serif}
+  #billiobingo h1{margin:6px 0 8px;font-size:24px}
+  #billiobingo h2{margin:16px 0 8px;font-size:16px}
+  #billiobingo .muted{color:#666;font-size:12px}
+  #billiobingo .two-col{display:grid;grid-template-columns:1.2fr .8fr;gap:20px}
+  @media (max-width:900px){#billiobingo .two-col{grid-template-columns:1fr}}
+
+  /* --- NUM PAD --- */
+  #billiobingo .pad{display:grid;grid-template-columns:repeat(10,1fr);gap:6px}
+  #billiobingo .num{
+    border:1px solid #9ca3af;border-radius:6px;padding:12px 0;text-align:center;
+    cursor:pointer;user-select:none;background:#fff;color:#0b0f19;font-weight:700;font-size:16px;letter-spacing:.2px;
+    transition:transform .12s, background .15s, color .15s, border-color .15s, box-shadow .15s;
+    box-shadow:0 1px 0 rgba(0,0,0,.04);
+  }
+  #billiobingo .num:hover{background:#f1f5f9;border-color:#6b7280;box-shadow:0 1px 0 rgba(0,0,0,.06), 0 0 0 3px rgba(14,165,233,.15);transform:translateY(-1px)}
+  #billiobingo .num.sel{background:#0f172a;color:#fff;border-color:#0f172a;box-shadow:0 0 0 3px rgba(15,23,42,.25)}
+
+  /* Controls / buttons */
+  #billiobingo .bar{display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin:10px 0 14px}
+  #billiobingo .btn{background:#111;color:#fff;border:0;border-radius:8px;padding:10px 16px;cursor:pointer;font-weight:700}
+  #billiobingo .btn:hover{background:#333}
+  #randBtn{background:linear-gradient(180deg,#22d3ee,#0ea5e9);color:#0b1220;text-shadow:0 1px 0 rgba(255,255,255,.35);border:1px solid #0284c7}
+  #randBtn:hover{filter:saturate(1.05) brightness(1.03)}
+  #randBtn:focus{outline:3px solid rgba(14,165,233,.45);outline-offset:2px}
+
+  /* Preview tables */
+  #billiobingo .grid{border-collapse:collapse;width:100%;max-width:460px}
+  #billiobingo .grid th,#billiobingo .grid td{border:1px solid #ddd;text-align:center;padding:10px;vertical-align:middle}
+  #billiobingo .grid th{background:#f5f5f5}
+  #billiobingo .grid td{color:#0b0f19;font-weight:600}
+
+  #billiobingo .pill{padding:4px 8px;border-radius:999px;background:#e5e7eb;color:#0b0f19;font-weight:700}
+  #billiobingo .warn{color:#b91c1c}
+  #billiobingo .mini{border-collapse:collapse;width:100%;margin-top:8px}
+  #billiobingo .mini td,#billiobingo .mini th{border:1px solid #e5e7eb;padding:6px;text-align:center;font-size:12px}
+  #billiobingo .footer{display:flex;gap:10px;align-items:center;margin-top:12px;flex-wrap:wrap}
+  #billiobingo input, #billiobingo textarea{width:100%;padding:8px 10px;border:1px solid #9ca3af;border-radius:6px}
+  #billiobingo label{font-size:13px;margin:8px 0 4px;display:block}
+  #billiobingo .section{margin-top:18px}
+
+  /* Logo block */
+  #billiobingo .brand{display:flex;align-items:center;gap:12px;margin:10px 0 6px}
+  #billiobingo .brand img{height:44px;width:auto;display:block}
+
+  /* Remember-me micro styles */
+  #billiobingo .remember-row{display:flex;gap:10px;align-items:center;margin:8px 0}
+  #billiobingo .forget-link{font-size:12px;color:#555;text-decoration:underline;cursor:pointer}
+</style>
+</head>
+<body>
+<div id="billiobingo" style="max-width:1100px;margin:0 auto">
+  <!-- 1) LOGO -->
+  <div class="brand">
+    <img src="./assets/fat-mule-records-logo.png" alt="Fat Mule Records logo">
+    <h1>Build Your Fat Mule Bingo Card</h1>
+  </div>
+
+  <p class="muted">Pick <strong>exactly 25 numbers</strong> from 1–100. Preview updates live. Then submit — we’ll log it to the sheet and send you to the Game Room.</p>
+
+  <div class="two-col">
+    <!-- LEFT: Number pad -->
+    <section>
+      <div class="bar">
+        <button id="randBtn" class="btn" type="button">🎲 Random 25</button>
+        <button id="clearBtn" class="btn" type="button">🧹 Clear</button>
+        <span id="count" class="pill">Selected: 0 / 25</span>
+        <span id="alert" class="muted warn"></span>
+      </div>
+      <div id="pad" class="pad" aria-label="Pick numbers 1 to 100"></div>
+    </section>
+
+    <!-- RIGHT: Live preview -->
+    <section>
+      <h2>Card Preview</h2>
+      <table class="grid" aria-label="5 by 5 card preview">
+        <thead>
+          <tr><th>B</th><th>I</th><th>N</th><th>G</th><th>O</th></tr>
+        </thead>
+        <tbody id="previewTop"></tbody>
+      </table>
+    </section>
+  </div>
+
+  <!-- ===== Bottom Form ===== -->
+  <div class="section">
+    <h2>Submit Your Card</h2>
+
+    <form id="bzForm" method="POST" autocomplete="on" novalidate>
+      <!-- Visible fields -->
+      <label for="f_name">Name</label>
+      <input id="f_name" name="name" placeholder="Your name" required autocomplete="name">
+
+      <label for="f_email">Email</label>
+      <input id="f_email" name="email" type="email" placeholder="you@example.com" required autocomplete="email">
+
+      <label for="f_tiktok">TikTok username</label>
+      <input id="f_tiktok" name="tiktok" placeholder="@yourusername" autocomplete="username">
+
+      <!-- ✅ REMEMBER ME -->
+      <div class="remember-row">
+        <input id="f_remember" type="checkbox" aria-label="Keep me on this device, baby">
+        <label for="f_remember" style="margin:0;">Keep me on this device, baby</label>
+        <span id="forget_link" class="forget-link" role="button" tabindex="0">Nah, forget me here</span>
+      </div>
+
+      <div style="display:flex;gap:10px;align-items:center;margin:10px 0">
+        <input id="f_locked" type="checkbox">
+        <label for="f_locked" style="margin:0">Lock card</label>
+      </div>
+
+      <label for="f_game_lock">Game Lock #</label>
+      <input id="f_game_lock" name="game_lock" placeholder="e.g., 7421">
+
+      <!-- HIDDEN payloads -->
+      <input type="hidden" id="f_selected_hidden" name="selected_numbers">
+      <input type="hidden" id="f_json_hidden" name="grid_json">
+      <input type="hidden" id="f_locked_hidden" name="locked" value="false">
+
+      <!-- Email-friendly rows -->
+      <input type="hidden" id="f_row1" name="row_1">
+      <input type="hidden" id="f_row2" name="row_2">
+      <input type="hidden" id="f_row3" name="row_3">
+      <input type="hidden" id="f_row4" name="row_4">
+      <input type="hidden" id="f_row5" name="row_5">
+
+      <!-- Optional BINGO columns -->
+      <input type="hidden" id="f_colB" name="col_B">
+      <input type="hidden" id="f_colI" name="col_I">
+      <input type="hidden" id="f_colN" name="col_N">
+      <input type="hidden" id="f_colG" name="col_G">
+      <input type="hidden" id="f_colO" name="col_O">
+
+      <!-- Mini preview -->
+      <table class="mini" aria-label="5 by 5 card preview (form)">
+        <thead>
+          <tr><th>B</th><th>I</th><th>N</th><th>G</th><th>O</th></tr>
+        </thead>
+        <tbody id="previewBottom"></tbody>
+      </table>
+
+      <div class="footer">
+        <button class="btn" type="submit">Send &amp; Continue</button>
+        <span id="msg" class="muted"></span>
+      </div>
+
+      <p class="muted" style="margin-top:6px;">
+        By sendin’ your card, you’re steppin’ into the Fat Mule fam—where the blues stay loud, the games stay live, and the good times roll. Unsubscribe anytime.
+      </p>
+    </form>
+
+    <p class="muted">After submit, you’ll be redirected to the Game Room.</p>
+  </div>
+
+  <script>
+    (function(){
+      const GAME_ROOM_URL = 'game-room.html';
+
+      /* ✅ Your Google Apps Script web app URL (MUST be /exec, deployed to Anyone) */
+      const GOOGLE_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbzb6_4vg9kk2bazfEuEOzyGcDwfl2qvY3fMiTikYQV9X2vFbgSumc4-KfXxvi3J20gW/exec';
+
+      const padEl = document.getElementById('pad');
+      const previewTop = document.getElementById('previewTop');
+      const previewBottom = document.getElementById('previewBottom');
+      const alertEl = document.getElementById('alert');
+      const msgEl = document.getElementById('msg');
+
+      // Form refs
+      const form = document.getElementById('bzForm');
+      const fName = document.getElementById('f_name');
+      const fEmail = document.getElementById('f_email');
+      const fTikTok = document.getElementById('f_tiktok');
+      const fLocked = document.getElementById('f_locked');
+      const fLockedHidden = document.getElementById('f_locked_hidden');
+      const fGameLock = document.getElementById('f_game_lock');
+      const fSelectedHidden = document.getElementById('f_selected_hidden');
+      const fJsonHidden = document.getElementById('f_json_hidden');
+
+      const fRow1 = document.getElementById('f_row1');
+      const fRow2 = document.getElementById('f_row2');
+      const fRow3 = document.getElementById('f_row3');
+      const fRow4 = document.getElementById('f_row4');
+      const fRow5 = document.getElementById('f_row5');
+      const fColB = document.getElementById('f_colB');
+      const fColI = document.getElementById('f_colI');
+      const fColN = document.getElementById('f_colN');
+      const fColG = document.getElementById('f_colG');
+      const fColO = document.getElementById('f_colO');
+
+      // ✅ REMEMBER ME refs
+      const fRemember = document.getElementById('f_remember');
+      const forgetLink = document.getElementById('forget_link');
+      const REM_KEY = 'bingo_player_v1';
+
+      const state = { picks:new Set(), grid:[] };
+
+      // Prefill from localStorage
+      try {
+        const saved = JSON.parse(localStorage.getItem(REM_KEY) || '{}');
+        if (saved && (saved.name || saved.email || saved.tiktok)) {
+          if (saved.name)   fName.value = saved.name;
+          if (saved.email)  fEmail.value = saved.email;
+          if (saved.tiktok) fTikTok.value = saved.tiktok;
+          if (fRemember) fRemember.checked = true;
+        }
+      } catch(e){}
+
+      // Build number pad 1..100
+      for (let n=1;n<=100;n++){
+        const b=document.createElement('div');
+        b.className='num'; b.textContent=n; b.dataset.n=n;
+        b.addEventListener('click',()=>togglePick(n,b));
+        padEl.appendChild(b);
+      }
+
+      function togglePick(n, btn){
+        alertEl.textContent='';
+        if(state.picks.has(n)){ state.picks.delete(n); btn.classList.remove('sel'); }
+        else{
+          if(state.picks.size>=25){ alertEl.textContent='Select exactly 25.'; return; }
+          state.picks.add(n); btn.classList.add('sel');
+        }
+        syncAll();
+      }
+
+      function buildGrid(){
+        let arr = Array.from(state.picks).sort((a,b)=>a-b);
+        while (arr.length < 25) arr.push('');
+        const g=[]; let k=0;
+        for (let r=0;r<5;r++){ const row=[]; for (let c=0;c<5;c++){ row.push(arr[k++]); } g.push(row); }
+        state.grid = g;
+      }
+
+      function render(tbody){
+        tbody.innerHTML = '';
+        const g = state.grid;
+        for (let r=0;r<5;r++){
+          const tr=document.createElement('tr');
+          for (let c=0;c<5;c++){
+            const td=document.createElement('td');
+            td.textContent = g[r][c];
+            tr.appendChild(td);
+          }
+          tbody.appendChild(tr);
+        }
+      }
+
+      function rowsAndCols(g){
+        const rows = g.map(r => r.map(x => x === '' ? '' : String(x)).join(' '));
+        const cols = [0,1,2,3,4].map(c => g.map(r => r[c]).map(x => x === '' ? '' : String(x)).join(' '));
+        return { rows, cols };
+      }
+
+      function payload(){
+        return {
+          page:'builder',
+          type:'number-bingo-1-100',
+          selected: Array.from(state.picks).sort((a,b)=>a-b),
+          grid: state.grid,
+          user: {
+            name:   fName.value.trim(),
+            email:  fEmail.value.trim(),
+            tiktok: fTikTok.value.trim()
+          },
+          locked:    fLocked.checked,
+          game_lock: fGameLock.value.trim(),
+          submitted_at: new Date().toISOString(),
+          ua: navigator.userAgent
+        };
+      }
+
+      function pushIntoForm(){
+        const pl = payload();
+
+        fSelectedHidden.value = pl.selected.join(', ');
+        fJsonHidden.value     = JSON.stringify(pl, null, 2);
+        fLockedHidden.value   = pl.locked ? 'true' : 'false';
+
+        const { rows, cols } = rowsAndCols(pl.grid);
+        fRow1.value = rows[0]; fRow2.value = rows[1]; fRow3.value = rows[2]; fRow4.value = rows[3]; fRow5.value = rows[4];
+        fColB.value = cols[0]; fColI.value = cols[1]; fColN.value = cols[2]; fColG.value = cols[3]; fColO.value = cols[4];
+
+        try { localStorage.setItem('bingo_card_last', JSON.stringify(pl)); } catch(e) {}
+      }
+
+      function syncAll(){
+        document.getElementById('count').textContent = `Selected: ${state.picks.size} / 25`;
+        buildGrid();
+        render(previewTop);
+        render(previewBottom);
+        pushIntoForm();
+      }
+
+      // ---- Google Sheets POST (beacon-first, then no-preflight fallback) ----
+      function postToGoogle(pl){
+        const json = JSON.stringify(pl);
+
+        // 1) Try sendBeacon
+        try{
+          if (navigator.sendBeacon) {
+            const ok = navigator.sendBeacon(GOOGLE_SCRIPT_URL, new Blob([json], { type:'text/plain' }));
+            if (ok) return Promise.resolve(true);
+          }
+        }catch(_){}
+
+        // 2) Fallback: FormData + no-cors
+        try{
+          const fd = new FormData();
+          fd.append('payload', json);
+
+          return fetch(GOOGLE_SCRIPT_URL, {
+            method:'POST',
+            body: fd,
+            mode: 'no-cors',
+            credentials:'omit',
+            keepalive:true
+          }).then(()=>true).catch(()=>true);
+        }catch(__){
+          return Promise.resolve(true);
+        }
+      }
+
+      // Buttons
+      document.getElementById('randBtn').addEventListener('click', ()=>{
+        state.picks.clear();
+        padEl.querySelectorAll('.num.sel').forEach(el=>el.classList.remove('sel'));
+        const pool=[...Array(100)].map((_,i)=>i+1);
+        for(let i=pool.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [pool[i],pool[j]]=[pool[j],pool[i]]; }
+        pool.slice(0,25).forEach(n=>{
+          state.picks.add(n);
+          const cell=padEl.querySelector(`.num[data-n="${n}"]`); if(cell) cell.classList.add('sel');
+        });
+        syncAll();
+      });
+
+      document.getElementById('clearBtn').addEventListener('click', ()=>{
+        state.picks.clear();
+        padEl.querySelectorAll('.num.sel').forEach(el=>el.classList.remove('sel'));
+        syncAll();
+      });
+
+      // Keep payload in sync with form typing
+      ['input','change'].forEach(evt=>{
+        fName.addEventListener(evt,pushIntoForm);
+        fEmail.addEventListener(evt,pushIntoForm);
+        fTikTok.addEventListener(evt,pushIntoForm);
+        fLocked.addEventListener(evt,pushIntoForm);
+        fGameLock.addEventListener(evt,pushIntoForm);
+      });
+
+      // ✅ Remember-me logic
+      function saveRemembered(){
+        if (!fRemember || !fRemember.checked) return;
+        const data = {
+          name: fName.value.trim(),
+          email: fEmail.value.trim(),
+          tiktok: fTikTok.value.trim()
+        };
+        try { localStorage.setItem(REM_KEY, JSON.stringify(data)); } catch(e){}
+      }
+
+      if (fRemember) {
+        [fName,fEmail,fTikTok].forEach(el=>{
+          el.addEventListener('input', saveRemembered);
+          el.addEventListener('change', saveRemembered);
+        });
+        fRemember.addEventListener('change', ()=>{
+          if (!fRemember.checked) localStorage.removeItem(REM_KEY);
+          else saveRemembered();
+        });
+      }
+
+      if (forgetLink) {
+        const clearSaved = ()=>{
+          localStorage.removeItem(REM_KEY);
+          if (fRemember) fRemember.checked = false;
+          alert('All right—info cleared on this device.');
+        };
+        forgetLink.addEventListener('click', e=>{ e.preventDefault(); clearSaved(); });
+        forgetLink.addEventListener('keydown', e=>{ if(e.key==='Enter' || e.key===' '){ e.preventDefault(); clearSaved(); }});
+      }
+
+      // Guard + Submit -> Google Sheets -> Redirect
+      form.addEventListener('submit', (e)=>{
+        e.preventDefault();
+
+        if (!fName.value.trim() || !fEmail.value.trim()){
+          alertEl.textContent = 'Name and email are required.';
+          return;
+        }
+
+        if (state.picks.size !== 25) {
+          alertEl.textContent = 'Please select exactly 25 numbers before submitting.';
+          return;
+        }
+
+        pushIntoForm();
+
+        const pl = payload();
+        msgEl.textContent = 'Sending…';
+
+        postToGoogle(pl).finally(()=>{
+          // fire-and-forget
+          window.location.href = GAME_ROOM_URL;
+        });
+      });
+
+      // init
+      syncAll();
+    })();
+  </script>
+</div>
+</body>
+</html>
