@@ -15,14 +15,9 @@
     h1{margin:0 0 6px;font-size:22px}
     .muted{color:var(--muted);font-size:12px}
 
-    .layout{
-      display:grid; gap:18px; align-items:start;
-      grid-template-columns:minmax(0,1.15fr) minmax(0,0.85fr);
-    }
+    .layout{ display:grid; gap:18px; align-items:start; grid-template-columns:minmax(0,1.15fr) minmax(0,0.85fr);}
     @media (max-width:800px){ .layout{ grid-template-columns:1fr; } }
-    @media (orientation:landscape) and (max-width:800px){
-      .layout{ grid-template-columns:1fr 1fr; }
-    }
+    @media (orientation:landscape) and (max-width:800px){ .layout{ grid-template-columns:1fr 1fr; } }
 
     .panel{background:var(--bg);border:1px solid var(--line);border-radius:10px;overflow:hidden}
     .panel header{padding:10px 12px;border-bottom:1px solid var(--line);background:var(--head);display:flex;gap:8px;align-items:center;flex-wrap:wrap;justify-content:space-between}
@@ -46,7 +41,9 @@
     #noCardMsg{color:var(--warn);margin-top:10px}
     .toast{display:none;margin:10px 0;padding:10px 12px;border-radius:8px;background:#ecfdf5;border:1px solid #10b981;color:#065f46;font-size:14px}
     .note{margin-top:8px;display:flex;gap:10px;align-items:center;flex-wrap:wrap}
-    #wirewarn{display:none;margin:10px 0;padding:10px 12px;border-radius:8px;background:#fff7ed;border:1px solid #f97316;color:#7c2d12;font-size:13px}
+
+    /* tiny status strip that shows only when server replies */
+    #serverStatus{display:none;margin:10px 0;padding:10px 12px;border-radius:8px;background:#eff6ff;border:1px solid #60a5fa;color:#1e3a8a;font-size:13px}
   </style>
 </head>
 <body>
@@ -54,7 +51,7 @@
     <h1>Fat Mule Bingo — Game Room</h1>
     <p class="muted">TikTok on the left, your card on the right. Turn the phone horizontal for a comfy side-by-side.</p>
 
-    <div id="wirewarn">Heads-up: couldn’t ping your Google Apps Script endpoint. Check the /exec URL on the hidden form.</div>
+    <div id="serverStatus">✅ Claim received by server. Check the Sheet.</div>
 
     <div id="toast" class="toast" role="status" aria-live="polite">
       Bingo claim sent. We’ll check it and holler back… taking you to the live.
@@ -113,13 +110,12 @@
   </div>
 
   <!-- Hidden iframe absorbs the POST so the page doesn't navigate -->
-  <iframe name="silent_receiver" style="display:none"></iframe>
+  <iframe name="silent_receiver" id="silent_receiver" style="display:none"></iframe>
 
   <!-- Hidden form that POSTS to your Google Apps Script (Sheet writer) -->
   <form id="bingoClaimForm"
         action="https://script.google.com/macros/s/AKfycbzb6_4vg9kk2bazfEuEOzyGcDwfl2qvY3fMiTikYQV9X2vFbgSumc4-KfXxvi3J20gW/exec"
         method="post" target="silent_receiver" style="display:none;" accept-charset="utf-8" novalidate>
-    <input type="hidden" name="secret" id="claim_secret" value="">
     <input type="hidden" name="type" value="claim">
     <input type="hidden" name="gameId" id="claim_gameId">
     <input type="hidden" name="playerName" id="claim_playerName">
@@ -128,6 +124,8 @@
     <input type="hidden" name="cardNumbers" id="claim_cardNumbers">
     <input type="hidden" name="notes" id="claim_notes" value="Bingo claim via game-room">
     <input type="hidden" name="imageData" id="claim_imageData">
+    <!-- add secret ONLY if your Apps Script requires it -->
+    <input type="hidden" name="secret" id="claim_secret" value="">
   </form>
 
   <!-- Email relay (kept) -->
@@ -138,20 +136,17 @@
     /* tuneables */
     var TIKTOK_HANDLE     = 'ricpatton';
     var LIVE_URL          = 'https://www.tiktok.com/@' + TIKTOK_HANDLE + '/live';
-    var GOOGLE_SCRIPT_URL = document.getElementById('bingoClaimForm').getAttribute('action');
     var WEBHOOK_SECRET    = ''; // set if your Apps Script checks a secret
     var ATTACH_IMAGE      = false; // keep false to verify rows land; flip true later
-    var IMG_SIZE          = 600;
-    var IMG_FORMAT        = 'image/jpeg';
-    var IMG_QUALITY       = 0.82;
-    var REDIRECT_TO_LIVE  = true;
-    var REDIRECT_DELAY_MS = 700;
+    var IMG_SIZE          = 600, IMG_FORMAT='image/jpeg', IMG_QUALITY=0.82;
+    var REDIRECT_TO_LIVE  = true, REDIRECT_DELAY_MS = 700;
     var STORAGE_KEY       = 'bingo_card_last';
 
     /* helpers & state */
     function byId(id){ return document.getElementById(id); }
     var cardBody = byId('cardBody');
     var toast = byId('toast');
+    var statusStrip = byId('serverStatus');
     var joinLiveLink = byId('joinLiveLink');
     var state = { payload:null, marks:new Set(), markKey:'' };
 
@@ -220,7 +215,7 @@
       return cvs;
     }
 
-    /* submit to Google */
+    /* submit to Google (iframe target) */
     function fillAndSubmitForm(fields){
       var form = document.getElementById('bingoClaimForm');
       byId('claim_secret').value       = WEBHOOK_SECRET || '';
@@ -230,14 +225,21 @@
       byId('claim_cardId').value       = fields.cardId || '';
       byId('claim_cardNumbers').value  = fields.cardNumbers || '';
       byId('claim_imageData').value    = fields.imageData || '';
-      // hard-lock the action so it never drifts
-      form.action = 'https://script.google.com/macros/s/AKfycbzb6_4vg9kk2bazfEuEOzyGcDwfl2qvY3fMiTikYQV9X2vFbgSumc4-KfXxvi3J20gW/exec';
 
       console.log('[Bingo] SUBMIT →', form.action, {
         type:'claim', gameId:fields.gameId, playerName:fields.playerName,
         email:fields.email, cardId:fields.cardId, cardNumbers:fields.cardNumbers,
         imageAttached: !!fields.imageData
       });
+
+      // when server responds, iframe will load -> show status
+      var sink = document.getElementById('silent_receiver');
+      var markLoaded = function(){
+        statusStrip.style.display = 'block';
+        sink.removeEventListener('load', markLoaded);
+      };
+      sink.addEventListener('load', markLoaded);
+
       form.submit();
     }
 
@@ -277,22 +279,9 @@
       }
     }
 
-    /* quick ping so you know the /exec is reachable */
-    function pingExec(url){
-      if (!url) return;
-      var ping = new Image();
-      ping.onload = function(){ console.log('[Bingo] PING OK →', url); };
-      ping.onerror = function(){
-        console.warn('[Bingo] PING FAILED →', url);
-        var warn = byId('wirewarn'); if (warn) warn.style.display='block';
-      };
-      var u = url + (url.indexOf('?')>-1?'&':'?') + 'ping=1&_ts=' + Date.now();
-      ping.src = u;
-    }
-
+    /* boot */
     function boot(){
       byId('joinLiveLink').href = LIVE_URL;
-      pingExec('https://script.google.com/macros/s/AKfycbzb6_4vg9kk2bazfEuEOzyGcDwfl2qvY3fMiTikYQV9X2vFbgSumc4-KfXxvi3J20gW/exec');
 
       var pl = loadPayload();
       if (!pl || !pl.grid || !pl.grid.length){
@@ -304,18 +293,12 @@
       loadMarks();
       renderMeta(pl);
       renderCard();
-
-      var url = new URL(location.href);
-      if (url.searchParams.get('claim') === 'ok'){
-        toast.style.display = 'block';
-      }
     }
 
     function wireButton(){
       var btn = document.getElementById('winBtn');
       if (btn) btn.addEventListener('click', function(e){ sendClaim(e.currentTarget); });
     }
-
     if (document.readyState === 'loading'){
       document.addEventListener('DOMContentLoaded', function(){ wireButton(); boot(); });
     }else{
