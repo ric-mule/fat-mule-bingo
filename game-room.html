@@ -50,7 +50,7 @@
 </head>
 <body>
   <div class="wrap">
-    <h1>Billio Bingo — Game Room</h1>
+    <h1></h1> Fat Mule Bingo — Game Room</h1>
     <p class="muted">TikTok on the left, your card on the right. Turn the phone horizontal for a comfy side-by-side.</p>
 
     <div id="toast" class="toast" role="status" aria-live="polite">
@@ -109,7 +109,22 @@
     </div>
   </div>
 
-  <!-- Hidden form stub (sending via fetch) -->
+  <!-- Hidden iframe absorbs the POST so the page doesn't navigate -->
+  <iframe name="silent_receiver" style="display:none"></iframe>
+
+  <!-- Hidden form that POSTS to your Google Apps Script (Sheet writer) -->
+  <form id="bingoClaimForm" action="https://script.google.com/macros/s/AKfycbzb6_4vg9kk2bazfEuEOzyGcDwfl2qvY3fMiTikYQV9X2vFbgSumc4-KfXxvi3J20gW/exec" method="post" target="silent_receiver" style="display:none;">
+    <input type="hidden" name="type" value="claim">
+    <input type="hidden" name="gameId" id="claim_gameId">
+    <input type="hidden" name="playerName" id="claim_playerName">
+    <input type="hidden" name="email" id="claim_email">
+    <input type="hidden" name="cardId" id="claim_cardId">
+    <input type="hidden" name="cardNumbers" id="claim_cardNumbers">
+    <input type="hidden" name="notes" id="claim_notes" value="Bingo claim via game-room">
+    <input type="hidden" name="imageData" id="claim_imageData"><!-- data:image/...;base64,... -->
+  </form>
+
+  <!-- Kept: hidden form stub for email relay (FormSubmit) -->
   <form id="winnerForm" action="https://formsubmit.co/bingo@alabamabluesman.com" method="POST" style="display:none"></form>
 
   <script>
@@ -117,13 +132,12 @@
     /* ==== knobs you can tweak ==== */
     var TIKTOK_HANDLE     = 'ricpatton';
     var LIVE_URL          = 'https://www.tiktok.com/@' + TIKTOK_HANDLE + '/live';
-    var ACTION_URL        = 'https://formsubmit.co/bingo@alabamabluesman.com';
 
     // Your published Apps Script Web App URL (must end with /exec, access = Anyone)
-    var GOOGLE_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbx_p8eTIywPgHwIQR8-FQVvmjoHtLZRgK8iGP271SoQhL5gu8OdWIX0Wex5kxer8wf_/exec';
+    var GOOGLE_SCRIPT_URL = document.getElementById('bingoClaimForm').getAttribute('action');
 
-    // optional: add your serverless relay URL for Discord alerts
-    var RELAY_URL         = ''; // e.g. 'https://yourdomain.com/api/discord-relay'
+    // optional: serverless relay URL for Discord alerts (unused here)
+    var RELAY_URL         = '';
 
     var ATTACH_IMAGE      = true;
     var IMG_SIZE          = 600;
@@ -149,6 +163,26 @@
         var h = 0; for(var i=0;i<s.length;i++){ h = ((h<<5)-h) + s.charCodeAt(i); h|=0; }
         return 'marks_' + Math.abs(h);
       }catch(e){ return 'marks_default'; }
+    }
+
+    // Card ID from grid (stable)
+    function cardIdFromGrid(g){
+      try{
+        var s = JSON.stringify(g);
+        var h = 0; for (var i=0;i<s.length;i++){ h = ((h<<5)-h) + s.charCodeAt(i); h|=0; }
+        return 'card_' + Math.abs(h);
+      }catch(e){ return 'card_unknown'; }
+    }
+
+    function flattenGridToCsv(g){
+      var out = [];
+      for (var r=0;r<5;r++){
+        for (var c=0;c<5;c++){
+          var v = g[r][c];
+          out.push((v==null||v==='')?'':String(v));
+        }
+      }
+      return out.join(',');
     }
 
     function parseCardParam(){
@@ -232,7 +266,7 @@
       }catch(e){}
     }
 
-    /* ===== draw compressed image with TikTok handle stamped ===== */
+    /* ===== image helpers ===== */
     function fitText(ctx, text, maxPx, basePx, minPx){
       var size = basePx;
       ctx.font = 'bold ' + size + 'px Arial, Helvetica, sans-serif';
@@ -242,13 +276,11 @@
       }
       return size;
     }
-
     function normalizeHandle(raw){
       var s = (raw || '').trim();
       if (!s) return '';
       return s.charAt(0) === '@' ? s : '@' + s.replace(/^@+/,'');
     }
-
     function drawCardToCanvas(grid, marks, tiktokHandle){
       var size = IMG_SIZE;
       var pad = 26, headH = 82;
@@ -313,64 +345,16 @@
       var tiktok = normalizeHandle(user.tiktok || '');
       var lock = (pl && pl.game_lock) ? pl.game_lock : '';
       var when = new Date().toLocaleString();
-      return 'BINGO CLAIM\\n'
-        + 'Player: ' + name + '\\n'
-        + 'Email: ' + email + '\\n'
-        + 'TikTok: ' + tiktok + '\\n'
-        + 'Game Lock: ' + lock + '\\n'
-        + 'Claimed At: ' + when + '\\n'
+      return 'BINGO CLAIM\n'
+        + 'Player: ' + name + '\n'
+        + 'Email: ' + email + '\n'
+        + 'TikTok: ' + tiktok + '\n'
+        + 'Game Lock: ' + lock + '\n'
+        + 'Claimed At: ' + when + '\n'
         + '(See attached bingo card image for verification)';
     }
 
-    /* ===== optional Discord relay ===== */
-    async function alertDiscord(pl, marksCount, imageBlob){
-      try{
-        if (!RELAY_URL) return;
-        var user = pl && pl.user ? pl.user : {};
-        var payload = {
-          name: user.name || '',
-          email: user.email || '',
-          tiktok: (user.tiktok || '').trim(),
-          game_lock: (pl && pl.game_lock) ? pl.game_lock : '',
-          marks: marksCount,
-          summary: buildSummaryText(pl),
-          at: new Date().toISOString()
-        };
-        await fetch(RELAY_URL, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload),
-          keepalive: true
-        }).catch(function(){});
-      }catch(e){}
-    }
-
-    /* ===== send the claim to Google Apps Script via GET image beacon ===== */
-    function sendToGoogle(pl){
-      try{
-        if (!GOOGLE_SCRIPT_URL || GOOGLE_SCRIPT_URL.indexOf('http') !== 0) return;
-        var user = (pl && pl.user) ? pl.user : {};
-        var params = new URLSearchParams({
-          mode:          'claim',
-          submitted_at:  new Date().toISOString(),
-          player_name:   user.name || '',
-          player_email:  user.email || '',
-          player_tiktok: (user.tiktok || '').trim(),
-          game_lock:     pl.game_lock || '',
-          marks_count:   String(state.marks.size),
-          marks_list:    JSON.stringify(Array.from(state.marks)),
-          grid:          JSON.stringify(pl.grid),
-          summary:       buildSummaryText(pl)
-        });
-
-        var img = new Image();
-        img.alt = '';
-        img.src = GOOGLE_SCRIPT_URL + '?' + params.toString();
-        setTimeout(function(){ img = null; }, 3000);
-      }catch(e){}
-    }
-
-    // ---- fire-and-go email + Google + optional Discord + auto-redirect ----
+    /* ===== send the claim (email + Google Sheet via hidden form POST) ===== */
     async function sendClaim(btn){
       var pl = state.payload;
       if (!pl) { alert('No card loaded yet.'); return; }
@@ -383,40 +367,53 @@
       var user = pl.user || {};
       var tiktokHandle = normalizeHandle(user.tiktok || '');
 
+      // 1) Build stamped image + a dataURL for Google
       var canvas = drawCardToCanvas(pl.grid, state.marks, tiktokHandle);
-      var imageBlob = await new Promise(function(res){
-        if (IMG_FORMAT === 'image/png') canvas.toBlob(res, 'image/png');
-        else canvas.toBlob(res, IMG_FORMAT, IMG_QUALITY);
-      });
+      var dataUrl = canvas.toDataURL(IMG_FORMAT, IMG_QUALITY);
 
-      // still do Discord (optional)
-      alertDiscord(pl, state.marks.size, imageBlob);
-
-      // === email submit (includes image attachment) ===
-      var fd = new FormData();
-      fd.append('_captcha', 'false');
-      var backUrl = new URL(location.href); backUrl.searchParams.set('claim','ok');
-      fd.append('_next', backUrl.toString());
-      fd.append('_subject', 'BINGO CLAIM — Billio Bingo');
-
-      fd.append('player_name',   (user.name || ''));
-      fd.append('player_email',  (user.email || ''));
-      fd.append('player_tiktok', tiktokHandle);
-      fd.append('game_lock',     (pl.game_lock || ''));
-      fd.append('submitted_at',  new Date().toISOString());
-      fd.append('summary',       buildSummaryText(pl));
-
-      if (imageBlob){
-        var fname = (IMG_FORMAT==='image/png') ? 'bingo-card.png' : 'bingo-card.jpg';
-        fd.append('card_image', imageBlob, fname);
-      }
-
+      // 2) Fire off email via FormSubmit (non-blocking)
       try{
-        fetch(ACTION_URL, { method:'POST', body:fd, mode:'no-cors', keepalive:true });
-      }catch(e){}
+        var fd = new FormData();
+        fd.append('_captcha', 'false');
+        var backUrl = new URL(location.href); backUrl.searchParams.set('claim','ok');
+        fd.append('_next', backUrl.toString());
+        fd.append('_subject', 'BINGO CLAIM — Billio Bingo');
 
-      // === also send to Google Sheet via image beacon ===
-      sendToGoogle(pl);
+        fd.append('player_name',   (user.name || ''));
+        fd.append('player_email',  (user.email || ''));
+        fd.append('player_tiktok', tiktokHandle);
+        fd.append('game_lock',     (pl.game_lock || ''));
+        fd.append('submitted_at',  new Date().toISOString());
+        fd.append('summary',       buildSummaryText(pl));
+
+        // attach image too (nice-to-have for your inbox)
+        canvas.toBlob(function(blob){
+          if (blob){
+            var fname = (IMG_FORMAT==='image/png') ? 'bingo-card.png' : 'bingo-card.jpg';
+            fd.append('card_image', blob, fname);
+          }
+          fetch('https://formsubmit.co/bingo@alabamabluesman.com', { method:'POST', body:fd, mode:'no-cors', keepalive:true });
+        }, IMG_FORMAT, IMG_QUALITY);
+      }catch(e){ /* ignore email errors */ }
+
+      // 3) Post to Google Sheet via hidden form (CORS-proof)
+      try{
+        var form = document.getElementById('bingoClaimForm');
+        if (!GOOGLE_SCRIPT_URL || GOOGLE_SCRIPT_URL.indexOf('http') !== 0){
+          console.error('[Bingo] Missing Apps Script URL');
+        } else {
+          document.getElementById('claim_gameId').value      = pl.game_lock || 'game-room-1';
+          document.getElementById('claim_playerName').value  = user.name || 'Guest';
+          document.getElementById('claim_email').value       = user.email || '';
+          document.getElementById('claim_cardId').value      = cardIdFromGrid(pl.grid);
+          document.getElementById('claim_cardNumbers').value = flattenGridToCsv(pl.grid);
+          document.getElementById('claim_imageData').value   = ATTACH_IMAGE ? dataUrl : '';
+          form.action = GOOGLE_SCRIPT_URL; // ensure correct target
+          form.submit(); // silent POST to your doPost(e)
+        }
+      }catch(err){
+        console.error('[Bingo] Google POST failed:', err);
+      }
 
       // toast + redirect
       toast.style.display = 'block';
