@@ -50,7 +50,7 @@
 </head>
 <body>
   <div class="wrap">
-    <h1></h1> Fat Mule Bingo — Game Room</h1>
+    <h1>Fat Mule Bingo — Game Room</h1>
     <p class="muted">TikTok on the left, your card on the right. Turn the phone horizontal for a comfy side-by-side.</p>
 
     <div id="toast" class="toast" role="status" aria-live="polite">
@@ -64,14 +64,14 @@
         <div class="body">
           <blockquote class="tiktok-embed" cite="https://www.tiktok.com/@ricpatton" data-unique-id="ricpatton" data-embed-type="creator" style="max-width:780px;min-width:288px;">
             <section>
-              <a target="_blank" href="https://www.tiktok.com/@ricpatton?refer=creator_embed">@ricpatton</a>
+              <a target="_blank" href="https://www.tiktok.com/@ricpatton?refer=creator_embed" rel="noopener noreferrer">@ricpatton</a>
             </section>
           </blockquote>
           <script async src="https://www.tiktok.com/embed.js"></script>
 
           <div class="note">
             <span class="muted">Wanna chat or gift? Join the live on TikTok:</span>
-            <a id="joinLiveLink" class="btn link" target="_blank" rel="noopener">Open Live Chat</a>
+            <a id="joinLiveLink" class="btn link" target="_blank" rel="noopener noreferrer">Open Live Chat</a>
           </div>
           <p class="muted">If the embed looks skinny, rotate your phone to landscape.</p>
         </div>
@@ -113,7 +113,11 @@
   <iframe name="silent_receiver" style="display:none"></iframe>
 
   <!-- Hidden form that POSTS to your Google Apps Script (Sheet writer) -->
-  <form id="bingoClaimForm" action="https://script.google.com/macros/s/AKfycbzb6_4vg9kk2bazfEuEOzyGcDwfl2qvY3fMiTikYQV9X2vFbgSumc4-KfXxvi3J20gW/exec" method="post" target="silent_receiver" style="display:none;">
+  <form id="bingoClaimForm"
+        action="https://script.google.com/macros/s/AKfycbzb6_4vg9kk2bazfEuEOzyGcDwfl2qvY3fMiTikYQV9X2vFbgSumc4-KfXxvi3J20gW/exec"
+        method="post" target="silent_receiver" style="display:none;" accept-charset="utf-8" novalidate>
+    <!-- If your Apps Script uses a shared secret, we include it -->
+    <input type="hidden" name="secret" id="claim_secret" value="">
     <input type="hidden" name="type" value="claim">
     <input type="hidden" name="gameId" id="claim_gameId">
     <input type="hidden" name="playerName" id="claim_playerName">
@@ -135,6 +139,9 @@
 
     // Your published Apps Script Web App URL (must end with /exec, access = Anyone)
     var GOOGLE_SCRIPT_URL = document.getElementById('bingoClaimForm').getAttribute('action');
+
+    // If your Apps Script expects a secret, set it here. Otherwise leave empty.
+    var WEBHOOK_SECRET    = ''; // <-- put your WEBHOOK_SECRET here if enabled in Apps Script
 
     // optional: serverless relay URL for Discord alerts (unused here)
     var RELAY_URL         = '';
@@ -402,12 +409,13 @@
         if (!GOOGLE_SCRIPT_URL || GOOGLE_SCRIPT_URL.indexOf('http') !== 0){
           console.error('[Bingo] Missing Apps Script URL');
         } else {
-          document.getElementById('claim_gameId').value      = pl.game_lock || 'game-room-1';
-          document.getElementById('claim_playerName').value  = user.name || 'Guest';
-          document.getElementById('claim_email').value       = user.email || '';
-          document.getElementById('claim_cardId').value      = cardIdFromGrid(pl.grid);
-          document.getElementById('claim_cardNumbers').value = flattenGridToCsv(pl.grid);
-          document.getElementById('claim_imageData').value   = ATTACH_IMAGE ? dataUrl : '';
+          document.getElementById('claim_secret').value       = WEBHOOK_SECRET || '';
+          document.getElementById('claim_gameId').value       = pl.game_lock || 'game-room-1';
+          document.getElementById('claim_playerName').value   = user.name || 'Guest';
+          document.getElementById('claim_email').value        = (user.email || '').trim().toLowerCase();
+          document.getElementById('claim_cardId').value       = cardIdFromGrid(pl.grid);
+          document.getElementById('claim_cardNumbers').value  = flattenGridToCsv(pl.grid);
+          document.getElementById('claim_imageData').value    = ATTACH_IMAGE ? dataUrl : '';
           form.action = GOOGLE_SCRIPT_URL; // ensure correct target
           form.submit(); // silent POST to your doPost(e)
         }
