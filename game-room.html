@@ -46,12 +46,15 @@
     #noCardMsg{color:var(--warn);margin-top:10px}
     .toast{display:none;margin:10px 0;padding:10px 12px;border-radius:8px;background:#ecfdf5;border:1px solid #10b981;color:#065f46;font-size:14px}
     .note{margin-top:8px;display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+    #wirewarn{display:none;margin:10px 0;padding:10px 12px;border-radius:8px;background:#fff7ed;border:1px solid #f97316;color:#7c2d12;font-size:13px}
   </style>
 </head>
 <body>
   <div class="wrap">
     <h1>Fat Mule Bingo — Game Room</h1>
     <p class="muted">TikTok on the left, your card on the right. Turn the phone horizontal for a comfy side-by-side.</p>
+
+    <div id="wirewarn">Heads-up: couldn’t ping your Google Apps Script endpoint. Check the /exec URL on the hidden form.</div>
 
     <div id="toast" class="toast" role="status" aria-live="polite">
       Bingo claim sent. We’ll check it and holler back… taking you to the live.
@@ -116,7 +119,6 @@
   <form id="bingoClaimForm"
         action="https://script.google.com/macros/s/AKfycbzb6_4vg9kk2bazfEuEOzyGcDwfl2qvY3fMiTikYQV9X2vFbgSumc4-KfXxvi3J20gW/exec"
         method="post" target="silent_receiver" style="display:none;" accept-charset="utf-8" novalidate>
-    <!-- If your Apps Script uses a shared secret, we include it -->
     <input type="hidden" name="secret" id="claim_secret" value="">
     <input type="hidden" name="type" value="claim">
     <input type="hidden" name="gameId" id="claim_gameId">
@@ -125,98 +127,46 @@
     <input type="hidden" name="cardId" id="claim_cardId">
     <input type="hidden" name="cardNumbers" id="claim_cardNumbers">
     <input type="hidden" name="notes" id="claim_notes" value="Bingo claim via game-room">
-    <input type="hidden" name="imageData" id="claim_imageData"><!-- data:image/...;base64,... -->
+    <input type="hidden" name="imageData" id="claim_imageData">
   </form>
 
-  <!-- Kept: hidden form stub for email relay (FormSubmit) -->
+  <!-- Email relay (kept) -->
   <form id="winnerForm" action="https://formsubmit.co/bingo@alabamabluesman.com" method="POST" style="display:none"></form>
 
   <script>
   (function(){
-    /* ==== knobs you can tweak ==== */
+    /* tuneables */
     var TIKTOK_HANDLE     = 'ricpatton';
     var LIVE_URL          = 'https://www.tiktok.com/@' + TIKTOK_HANDLE + '/live';
-
-    // Your published Apps Script Web App URL (must end with /exec, access = Anyone)
     var GOOGLE_SCRIPT_URL = document.getElementById('bingoClaimForm').getAttribute('action');
-
-    // If your Apps Script expects a secret, set it here. Otherwise leave empty.
-    var WEBHOOK_SECRET    = ''; // <-- put your WEBHOOK_SECRET here if enabled in Apps Script
-
-    // optional: serverless relay URL for Discord alerts (unused here)
-    var RELAY_URL         = '';
-
-    var ATTACH_IMAGE      = true;
+    var WEBHOOK_SECRET    = ''; // set if your Apps Script checks a secret
+    var ATTACH_IMAGE      = false; // keep false to verify rows land; flip true later
     var IMG_SIZE          = 600;
     var IMG_FORMAT        = 'image/jpeg';
     var IMG_QUALITY       = 0.82;
     var REDIRECT_TO_LIVE  = true;
     var REDIRECT_DELAY_MS = 700;
-
     var STORAGE_KEY       = 'bingo_card_last';
 
-    /* ==== helpers ==== */
+    /* helpers & state */
     function byId(id){ return document.getElementById(id); }
     var cardBody = byId('cardBody');
     var toast = byId('toast');
-    var winBtn = byId('winBtn');
     var joinLiveLink = byId('joinLiveLink');
-
     var state = { payload:null, marks:new Set(), markKey:'' };
 
-    function gridHash(g){
-      try{
-        var s = JSON.stringify(g);
-        var h = 0; for(var i=0;i<s.length;i++){ h = ((h<<5)-h) + s.charCodeAt(i); h|=0; }
-        return 'marks_' + Math.abs(h);
-      }catch(e){ return 'marks_default'; }
-    }
-
-    // Card ID from grid (stable)
-    function cardIdFromGrid(g){
-      try{
-        var s = JSON.stringify(g);
-        var h = 0; for (var i=0;i<s.length;i++){ h = ((h<<5)-h) + s.charCodeAt(i); h|=0; }
-        return 'card_' + Math.abs(h);
-      }catch(e){ return 'card_unknown'; }
-    }
-
-    function flattenGridToCsv(g){
-      var out = [];
-      for (var r=0;r<5;r++){
-        for (var c=0;c<5;c++){
-          var v = g[r][c];
-          out.push((v==null||v==='')?'':String(v));
-        }
-      }
-      return out.join(',');
-    }
-
-    function parseCardParam(){
-      try{
-        var url = new URL(location.href);
-        var raw = url.searchParams.get('card');
-        if (!raw) return null;
-        var decoded = decodeURIComponent(raw);
-        return JSON.parse(atob(decoded));
-      }catch(e){ return null; }
-    }
+    function gridHash(g){ try{ var s=JSON.stringify(g),h=0; for(var i=0;i<s.length;i++){ h=((h<<5)-h)+s.charCodeAt(i); h|=0; } return 'marks_'+Math.abs(h);}catch(e){return'marks_default';}}
+    function cardIdFromGrid(g){ try{ var s=JSON.stringify(g),h=0; for(var i=0;i<s.length;i++){ h=((h<<5)-h)+s.charCodeAt(i); h|=0; } return 'card_'+Math.abs(h);}catch(e){return'card_unknown';}}
+    function flattenGridToCsv(g){ var out=[]; for (var r=0;r<5;r++){ for (var c=0;c<5;c++){ var v=g[r][c]; out.push((v==null||v==='')?'':String(v)); } } return out.join(',');}
+    function parseCardParam(){ try{ var url=new URL(location.href); var raw=url.searchParams.get('card'); if(!raw) return null; var decoded=decodeURIComponent(raw); return JSON.parse(atob(decoded)); }catch(e){ return null; } }
     function loadPayload(){
-      var fromUrl = parseCardParam();
-      if (fromUrl && fromUrl.grid){
-        try{ localStorage.setItem(STORAGE_KEY, JSON.stringify(fromUrl)); }catch(e){}
-        return fromUrl;
-      }
-      try{
-        var saved = localStorage.getItem(STORAGE_KEY);
-        return saved ? JSON.parse(saved) : null;
-      }catch(e){ return null; }
+      var fromUrl=parseCardParam();
+      if(fromUrl && fromUrl.grid){ try{ localStorage.setItem(STORAGE_KEY, JSON.stringify(fromUrl)); }catch(e){} return fromUrl; }
+      try{ var saved=localStorage.getItem(STORAGE_KEY); return saved?JSON.parse(saved):null; }catch(e){ return null; }
     }
-
-    function cellKey(r,c){ return r + '-' + c; }
-
+    function cellKey(r,c){ return r+'-'+c; }
     function renderMeta(pl){
-      var user = pl && pl.user ? pl.user : {};
+      var user=pl && pl.user?pl.user:{};
       byId('playerName').textContent   = user.name ? ('Player: ' + user.name) : '';
       byId('emailInfo').textContent    = user.email ? user.email : '';
       byId('tiktokInfo').textContent   = user.tiktok ? user.tiktok : '';
@@ -224,144 +174,73 @@
       byId('gameLockInfo').textContent = pl && pl.game_lock ? ('Lock # ' + pl.game_lock) : '';
       byId('timestampInfo').textContent= pl && pl.timestamp ? new Date(pl.timestamp).toLocaleString() : '';
     }
-
     function renderCard(){
       var g = state.payload.grid;
       cardBody.innerHTML = '';
       for (var r=0;r<5;r++){
-        var tr = document.createElement('tr');
+        var tr=document.createElement('tr');
         for (var c=0;c<5;c++){
-          var td = document.createElement('td');
-          td.className = 'cell';
-          var val = g[r][c];
-          td.textContent = (val===''||val==null)?'':String(val);
-          td.dataset.r = r; td.dataset.c = c;
-          td.addEventListener('click', (function(rr,cc){ return function(){ toggleMark(rr,cc); }; })(r,c));
+          var td=document.createElement('td');
+          td.className='cell';
+          var val=g[r][c];
+          td.textContent=(val===''||val==null)?'':String(val);
+          td.dataset.r=r; td.dataset.c=c;
+          td.addEventListener('click',(function(rr,cc){ return function(){ toggleMark(rr,cc); };})(r,c));
           tr.appendChild(td);
         }
         cardBody.appendChild(tr);
       }
       paintMarks();
     }
-
-    function toggleMark(r,c){
-      var k = cellKey(r,c);
-      if (state.marks.has(k)) state.marks.delete(k); else state.marks.add(k);
-      paintMarks();
-      persistMarks();
-    }
-
+    function toggleMark(r,c){ var k=cellKey(r,c); if(state.marks.has(k)) state.marks.delete(k); else state.marks.add(k); paintMarks(); persistMarks(); }
     function paintMarks(){
-      var cells = cardBody.querySelectorAll('.cell');
+      var cells=cardBody.querySelectorAll('.cell');
       for (var i=0;i<cells.length;i++){
-        var td = cells[i];
-        var k = cellKey(+td.dataset.r, +td.dataset.c);
-        if (state.marks.has(k)) td.classList.add('mark'); else td.classList.remove('mark');
+        var td=cells[i]; var k=cellKey(+td.dataset.r,+td.dataset.c);
+        if(state.marks.has(k)) td.classList.add('mark'); else td.classList.remove('mark');
       }
     }
-
-    function persistMarks(){
-      try{ localStorage.setItem(state.markKey, JSON.stringify(Array.from(state.marks))); }catch(e){}
-    }
-
-    function loadMarks(){
-      try{
-        var raw = localStorage.getItem(state.markKey);
-        if (!raw) return;
-        var arr = JSON.parse(raw) || [];
-        state.marks = new Set(arr);
-      }catch(e){}
-    }
-
-    /* ===== image helpers ===== */
-    function fitText(ctx, text, maxPx, basePx, minPx){
-      var size = basePx;
-      ctx.font = 'bold ' + size + 'px Arial, Helvetica, sans-serif';
-      while (ctx.measureText(text).width > maxPx && size > minPx){
-        size -= 1;
-        ctx.font = 'bold ' + size + 'px Arial, Helvetica, sans-serif';
-      }
-      return size;
-    }
-    function normalizeHandle(raw){
-      var s = (raw || '').trim();
-      if (!s) return '';
-      return s.charAt(0) === '@' ? s : '@' + s.replace(/^@+/,'');
-    }
+    function persistMarks(){ try{ localStorage.setItem(state.markKey, JSON.stringify(Array.from(state.marks))); }catch(e){} }
+    function loadMarks(){ try{ var raw=localStorage.getItem(state.markKey); if(!raw) return; var arr=JSON.parse(raw)||[]; state.marks=new Set(arr);}catch(e){} }
+    function fitText(ctx,text,maxPx,basePx,minPx){ var size=basePx; ctx.font='bold '+size+'px Arial, Helvetica, sans-serif'; while(ctx.measureText(text).width>maxPx && size>minPx){ size-=1; ctx.font='bold '+size+'px Arial, Helvetica, sans-serif'; } return size; }
+    function normalizeHandle(raw){ var s=(raw||'').trim(); if(!s) return ''; return s.charAt(0)==='@'?s:'@'+s.replace(/^@+/,''); }
     function drawCardToCanvas(grid, marks, tiktokHandle){
-      var size = IMG_SIZE;
-      var pad = 26, headH = 82;
-      var w = size, h = size + headH;
-      var cell = (size - pad*2) / 5;
-
-      var handle = normalizeHandle(tiktokHandle);
-
-      var cvs = document.createElement('canvas');
-      cvs.width = w; cvs.height = h;
-      var ctx = cvs.getContext('2d');
-
-      // background
-      ctx.fillStyle = '#ffffff'; ctx.fillRect(0,0,w,h);
-
-      // header "BINGO"
-      ctx.fillStyle = '#111';
-      ctx.font = 'bold 32px Arial, Helvetica, sans-serif';
-      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-      'BINGO'.split('').forEach(function(ch,i){
-        var x = pad + cell/2 + i*cell;
-        var y = 28;
-        ctx.fillText(ch, x, y);
-      });
-
-      // subheader: TikTok handle (if present)
-      if (handle){
-        ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
-        ctx.fillStyle = '#0f172a';
-        var maxWidth = size - pad*2;
-        var sizePx = fitText(ctx, handle, maxWidth, 22, 12);
-        ctx.font = 'bold ' + sizePx + 'px Arial, Helvetica, sans-serif';
-        ctx.fillText(handle, w/2, 56);
-      }
-
-      // grid
-      for (var r=0;r<5;r++){
-        for (var c=0;c<5;c++){
-          var x = pad + c*cell;
-          var y = headH - 6 + r*cell;
-          var key = r + '-' + c;
-          // cell bg
-          if (marks.has(key)){ ctx.fillStyle = '#16a34a'; ctx.fillRect(x, y, cell, cell); }
-          else { ctx.fillStyle = '#ffffff'; ctx.fillRect(x, y, cell, cell); }
-          // border
-          ctx.strokeStyle = '#111'; ctx.lineWidth = 2; ctx.strokeRect(x, y, cell, cell);
-          // number
-          var v = grid[r][c];
-          ctx.fillStyle = marks.has(key)? '#ffffff' : '#111111';
-          ctx.font = 'bold 26px Arial, Helvetica, sans-serif';
-          ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-          ctx.fillText((v==null||v==='')?'':String(v), x + cell/2, y + cell/2);
-        }
-      }
+      var size=IMG_SIZE, pad=26, headH=82, w=size, h=size+headH, cell=(size - pad*2)/5;
+      var handle=normalizeHandle(tiktokHandle);
+      var cvs=document.createElement('canvas'); cvs.width=w; cvs.height=h; var ctx=cvs.getContext('2d');
+      ctx.fillStyle='#ffffff'; ctx.fillRect(0,0,w,h);
+      ctx.fillStyle='#111'; ctx.font='bold 32px Arial, Helvetica, sans-serif'; ctx.textAlign='center'; ctx.textBaseline='middle';
+      'BINGO'.split('').forEach(function(ch,i){ var x=pad+cell/2+i*cell, y=28; ctx.fillText(ch,x,y); });
+      if(handle){ ctx.textAlign='center'; ctx.textBaseline='alphabetic'; ctx.fillStyle='#0f172a'; var maxW=size - pad*2; var sizePx=fitText(ctx,handle,maxW,22,12); ctx.font='bold '+sizePx+'px Arial, Helvetica, sans-serif'; ctx.fillText(handle,w/2,56); }
+      for (var r=0;r<5;r++){ for (var c=0;c<5;c++){ var x=pad+c*cell, y=headH-6+r*cell, key=r+'-'+c;
+        if(marks.has(key)){ ctx.fillStyle='#16a34a'; ctx.fillRect(x,y,cell,cell);} else { ctx.fillStyle='#ffffff'; ctx.fillRect(x,y,cell,cell); }
+        ctx.strokeStyle='#111'; ctx.lineWidth=2; ctx.strokeRect(x,y,cell,cell);
+        var v=grid[r][c]; ctx.fillStyle=marks.has(key)?'#ffffff':'#111111'; ctx.font='bold 26px Arial, Helvetica, sans-serif'; ctx.textAlign='center'; ctx.textBaseline='middle'; ctx.fillText((v==null||v==='')?'':String(v), x+cell/2, y+cell/2);
+      }}
       return cvs;
     }
 
-    function buildSummaryText(pl){
-      var user = pl && pl.user ? pl.user : {};
-      var name = user.name || '';
-      var email = user.email || '';
-      var tiktok = normalizeHandle(user.tiktok || '');
-      var lock = (pl && pl.game_lock) ? pl.game_lock : '';
-      var when = new Date().toLocaleString();
-      return 'BINGO CLAIM\n'
-        + 'Player: ' + name + '\n'
-        + 'Email: ' + email + '\n'
-        + 'TikTok: ' + tiktok + '\n'
-        + 'Game Lock: ' + lock + '\n'
-        + 'Claimed At: ' + when + '\n'
-        + '(See attached bingo card image for verification)';
+    /* submit to Google */
+    function fillAndSubmitForm(fields){
+      var form = document.getElementById('bingoClaimForm');
+      byId('claim_secret').value       = WEBHOOK_SECRET || '';
+      byId('claim_gameId').value       = fields.gameId || 'game-room-1';
+      byId('claim_playerName').value   = fields.playerName || 'Guest';
+      byId('claim_email').value        = (fields.email || '').trim().toLowerCase();
+      byId('claim_cardId').value       = fields.cardId || '';
+      byId('claim_cardNumbers').value  = fields.cardNumbers || '';
+      byId('claim_imageData').value    = fields.imageData || '';
+      // hard-lock the action so it never drifts
+      form.action = 'https://script.google.com/macros/s/AKfycbzb6_4vg9kk2bazfEuEOzyGcDwfl2qvY3fMiTikYQV9X2vFbgSumc4-KfXxvi3J20gW/exec';
+
+      console.log('[Bingo] SUBMIT →', form.action, {
+        type:'claim', gameId:fields.gameId, playerName:fields.playerName,
+        email:fields.email, cardId:fields.cardId, cardNumbers:fields.cardNumbers,
+        imageAttached: !!fields.imageData
+      });
+      form.submit();
     }
 
-    /* ===== send the claim (email + Google Sheet via hidden form POST) ===== */
     async function sendClaim(btn){
       var pl = state.payload;
       if (!pl) { alert('No card loaded yet.'); return; }
@@ -373,55 +252,21 @@
 
       var user = pl.user || {};
       var tiktokHandle = normalizeHandle(user.tiktok || '');
+      var imgData = '';
 
-      // 1) Build stamped image + a dataURL for Google
-      var canvas = drawCardToCanvas(pl.grid, state.marks, tiktokHandle);
-      var dataUrl = canvas.toDataURL(IMG_FORMAT, IMG_QUALITY);
-
-      // 2) Fire off email via FormSubmit (non-blocking)
-      try{
-        var fd = new FormData();
-        fd.append('_captcha', 'false');
-        var backUrl = new URL(location.href); backUrl.searchParams.set('claim','ok');
-        fd.append('_next', backUrl.toString());
-        fd.append('_subject', 'BINGO CLAIM — Billio Bingo');
-
-        fd.append('player_name',   (user.name || ''));
-        fd.append('player_email',  (user.email || ''));
-        fd.append('player_tiktok', tiktokHandle);
-        fd.append('game_lock',     (pl.game_lock || ''));
-        fd.append('submitted_at',  new Date().toISOString());
-        fd.append('summary',       buildSummaryText(pl));
-
-        // attach image too (nice-to-have for your inbox)
-        canvas.toBlob(function(blob){
-          if (blob){
-            var fname = (IMG_FORMAT==='image/png') ? 'bingo-card.png' : 'bingo-card.jpg';
-            fd.append('card_image', blob, fname);
-          }
-          fetch('https://formsubmit.co/bingo@alabamabluesman.com', { method:'POST', body:fd, mode:'no-cors', keepalive:true });
-        }, IMG_FORMAT, IMG_QUALITY);
-      }catch(e){ /* ignore email errors */ }
-
-      // 3) Post to Google Sheet via hidden form (CORS-proof)
-      try{
-        var form = document.getElementById('bingoClaimForm');
-        if (!GOOGLE_SCRIPT_URL || GOOGLE_SCRIPT_URL.indexOf('http') !== 0){
-          console.error('[Bingo] Missing Apps Script URL');
-        } else {
-          document.getElementById('claim_secret').value       = WEBHOOK_SECRET || '';
-          document.getElementById('claim_gameId').value       = pl.game_lock || 'game-room-1';
-          document.getElementById('claim_playerName').value   = user.name || 'Guest';
-          document.getElementById('claim_email').value        = (user.email || '').trim().toLowerCase();
-          document.getElementById('claim_cardId').value       = cardIdFromGrid(pl.grid);
-          document.getElementById('claim_cardNumbers').value  = flattenGridToCsv(pl.grid);
-          document.getElementById('claim_imageData').value    = ATTACH_IMAGE ? dataUrl : '';
-          form.action = GOOGLE_SCRIPT_URL; // ensure correct target
-          form.submit(); // silent POST to your doPost(e)
-        }
-      }catch(err){
-        console.error('[Bingo] Google POST failed:', err);
+      if (ATTACH_IMAGE){
+        var canvas = drawCardToCanvas(pl.grid, state.marks, tiktokHandle);
+        imgData = canvas.toDataURL(IMG_FORMAT, IMG_QUALITY);
       }
+
+      fillAndSubmitForm({
+        gameId: pl.game_lock || 'game-room-1',
+        playerName: user.name || 'Guest',
+        email: user.email || '',
+        cardId: cardIdFromGrid(pl.grid),
+        cardNumbers: flattenGridToCsv(pl.grid),
+        imageData: imgData
+      });
 
       // toast + redirect
       toast.style.display = 'block';
@@ -432,8 +277,22 @@
       }
     }
 
+    /* quick ping so you know the /exec is reachable */
+    function pingExec(url){
+      if (!url) return;
+      var ping = new Image();
+      ping.onload = function(){ console.log('[Bingo] PING OK →', url); };
+      ping.onerror = function(){
+        console.warn('[Bingo] PING FAILED →', url);
+        var warn = byId('wirewarn'); if (warn) warn.style.display='block';
+      };
+      var u = url + (url.indexOf('?')>-1?'&':'?') + 'ping=1&_ts=' + Date.now();
+      ping.src = u;
+    }
+
     function boot(){
-      joinLiveLink.href = LIVE_URL;
+      byId('joinLiveLink').href = LIVE_URL;
+      pingExec('https://script.google.com/macros/s/AKfycbzb6_4vg9kk2bazfEuEOzyGcDwfl2qvY3fMiTikYQV9X2vFbgSumc4-KfXxvi3J20gW/exec');
 
       var pl = loadPayload();
       if (!pl || !pl.grid || !pl.grid.length){
@@ -456,6 +315,7 @@
       var btn = document.getElementById('winBtn');
       if (btn) btn.addEventListener('click', function(e){ sendClaim(e.currentTarget); });
     }
+
     if (document.readyState === 'loading'){
       document.addEventListener('DOMContentLoaded', function(){ wireButton(); boot(); });
     }else{
