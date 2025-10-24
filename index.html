@@ -303,7 +303,7 @@
       function postToGoogle(pl){
         const json = JSON.stringify(pl);
 
-        // 1) Try sendBeacon
+        // 1) Try sendBeacon (text/plain to avoid preflight; server handles params fallback)
         try{
           if (navigator.sendBeacon) {
             const ok = navigator.sendBeacon(GOOGLE_SCRIPT_URL, new Blob([json], { type:'text/plain' }));
