@@ -278,7 +278,7 @@
           },
           locked:    fLocked.checked,
           game_lock: fGameLock.value.trim(),
-          timestamp: Date.now(),              // ✅ align name with Game Room/script usage
+          timestamp: Date.now(),
           submitted_at: new Date().toISOString(),
           ua: navigator.userAgent
         };
@@ -306,14 +306,44 @@
         pushIntoForm();
       }
 
-      // ---- Google Sheets POST (beacon-first, then no-preflight fallback) ----
-      function postToGoogle(pl){
-        const json = JSON.stringify(pl);
+      // 🔧 Build flat key/value payload for Apps Script columns
+      function buildFlatPayload(pl){
+        const { rows, cols } = rowsAndCols(pl.grid);
+        return {
+          // user fields — top-level for e.parameter.*
+          name:   pl.user.name,
+          email:  pl.user.email,
+          tiktok: pl.user.tiktok,
 
-        // 1) Try sendBeacon (text/plain to avoid preflight; server handles params fallback)
+          // useful extras
+          selected_numbers: pl.selected.join(', '),
+          grid_json: JSON.stringify(pl),
+          locked: pl.locked ? 'true' : 'false',
+          game_lock: pl.game_lock,
+          page: pl.page,
+          type: pl.type,
+          timestamp: String(pl.timestamp),
+          submitted_at: pl.submitted_at,
+          ua: pl.ua,
+
+          // email-friendly rows/cols
+          row_1: rows[0], row_2: rows[1], row_3: rows[2], row_4: rows[3], row_5: rows[4],
+          col_B: cols[0], col_I: cols[1], col_N: cols[2], col_G: cols[3], col_O: cols[4],
+        };
+      }
+
+      // ---- Google Sheets POST (sends flat fields + JSON) ----
+      function postToGoogle(pl){
+        const flat = buildFlatPayload(pl);
+
+        // 1) Try sendBeacon with urlencoded (no preflight)
         try{
           if (navigator.sendBeacon) {
-            const ok = navigator.sendBeacon(GOOGLE_SCRIPT_URL, new Blob([json], { type:'text/plain' }));
+            const body = new URLSearchParams(flat);
+            const ok = navigator.sendBeacon(
+              GOOGLE_SCRIPT_URL,
+              new Blob([body.toString()], { type:'application/x-www-form-urlencoded' })
+            );
             if (ok) return Promise.resolve(true);
           }
         }catch(_){}
@@ -321,7 +351,7 @@
         // 2) Fallback: FormData + no-cors
         try{
           const fd = new FormData();
-          fd.append('payload', json);
+          for (const [k,v] of Object.entries(flat)) fd.append(k, v);
 
           return fetch(GOOGLE_SCRIPT_URL, {
             method:'POST',
@@ -369,7 +399,7 @@
         const data = {
           name: fName.value.trim(),
           email: fEmail.value.trim(),
-          tiktok: normalizeHandle(fTikTok.value.trim()) // ✅ normalized
+          tiktok: normalizeHandle(fTikTok.value.trim())
         };
         try { localStorage.setItem(REM_KEY, JSON.stringify(data)); } catch(e){}
       }
