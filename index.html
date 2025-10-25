@@ -163,9 +163,15 @@
   <script>
     (function(){
       const GAME_ROOM_URL = 'game-room.html';
-
-      /* ✅ Your Google Apps Script web app URL (MUST be /exec, deployed to Anyone) */
+      /* Your Google Apps Script /exec URL (deployed for Anyone) */
       const GOOGLE_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbz07iN_5H2_U1Y2jLMr-xfEV4Niq4K44INFgxp1AzNxvlvBwQfCFVQfv752hLksh5u3/exec';
+
+      // --- helpers
+      function normalizeHandle(s){
+        s = String(s||'').trim();
+        if (!s) return '';
+        return s.startsWith('@') ? s : '@' + s.replace(/^@+/, '');
+      }
 
       const padEl = document.getElementById('pad');
       const previewTop = document.getElementById('previewTop');
@@ -268,10 +274,11 @@
           user: {
             name:   fName.value.trim(),
             email:  fEmail.value.trim(),
-            tiktok: fTikTok.value.trim()
+            tiktok: normalizeHandle(fTikTok.value.trim()) // ✅ normalized
           },
           locked:    fLocked.checked,
           game_lock: fGameLock.value.trim(),
+          timestamp: Date.now(),              // ✅ align name with Game Room/script usage
           submitted_at: new Date().toISOString(),
           ua: navigator.userAgent
         };
@@ -351,7 +358,7 @@
       ['input','change'].forEach(evt=>{
         fName.addEventListener(evt,pushIntoForm);
         fEmail.addEventListener(evt,pushIntoForm);
-        fTikTok.addEventListener(evt,pushIntoForm);
+        fTikTok.addEventListener(evt,()=>{ fTikTok.value = normalizeHandle(fTikTok.value); pushIntoForm(); });
         fLocked.addEventListener(evt,pushIntoForm);
         fGameLock.addEventListener(evt,pushIntoForm);
       });
@@ -362,7 +369,7 @@
         const data = {
           name: fName.value.trim(),
           email: fEmail.value.trim(),
-          tiktok: fTikTok.value.trim()
+          tiktok: normalizeHandle(fTikTok.value.trim()) // ✅ normalized
         };
         try { localStorage.setItem(REM_KEY, JSON.stringify(data)); } catch(e){}
       }
@@ -408,7 +415,6 @@
         msgEl.textContent = 'Sending…';
 
         postToGoogle(pl).finally(()=>{
-          // fire-and-forget
           window.location.href = GAME_ROOM_URL;
         });
       });
@@ -420,4 +426,3 @@
 </div>
 </body>
 </html>
-
