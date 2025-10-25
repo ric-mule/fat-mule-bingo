@@ -52,6 +52,7 @@
     </div>
 
     <div class="layout">
+      <!-- LEFT: TikTok embed -->
       <section class="panel">
         <header><strong>TikTok Live</strong></header>
         <div class="body">
@@ -61,6 +62,7 @@
             </section>
           </blockquote>
           <script async src="https://www.tiktok.com/embed.js"></script>
+
           <div class="note">
             <span class="muted">Wanna chat or gift? Join the live on TikTok:</span>
             <a id="joinLiveLink" class="btn link" target="_blank" rel="noopener noreferrer">Open Live Chat</a>
@@ -69,6 +71,7 @@
         </div>
       </section>
 
+      <!-- RIGHT: Player Card -->
       <aside class="panel">
         <header>
           <strong>Your Card</strong>
@@ -100,8 +103,10 @@
     </div>
   </div>
 
+  <!-- Hidden iframe absorbs the POST so the page doesn't navigate -->
   <iframe name="silent_receiver" id="silent_receiver" style="display:none"></iframe>
 
+  <!-- Hidden form that POSTS to your Google Apps Script -->
   <form id="bingoClaimForm"
         action="https://script.google.com/macros/s/AKfycbz07iN_5H2_U1Y2jLMr-xfEV4Niq4K44INFgxp1AzNxvlvBwQfCFVQfv752hLksh5u3/exec"
         method="post" target="silent_receiver" style="display:none;" accept-charset="utf-8" novalidate>
@@ -114,22 +119,25 @@
     <input type="hidden" name="notes" id="claim_notes" value="Bingo claim via game-room">
     <input type="hidden" name="imageData" id="claim_imageData">
     <input type="hidden" name="marks" id="claim_marks">
-    <input type="hidden" name="tiktok" id="claim_tiktok"><!-- ✅ New field -->
+    <input type="hidden" name="tiktok" id="claim_tiktok"><!-- TikTok handle -->
     <input type="hidden" name="secret" id="claim_secret" value="">
   </form>
 
+  <!-- Kept email relay -->
   <form id="winnerForm" action="https://formsubmit.co/bingo@alabamabluesman.com" method="POST" style="display:none"></form>
 
   <script>
   (function(){
+    /* knobs */
     var TIKTOK_HANDLE='ricpatton';
     var LIVE_URL='https://www.tiktok.com/@'+TIKTOK_HANDLE+'/live';
-    var ATTACH_IMAGE=true;
+    var ATTACH_IMAGE=true; // send proof image
     var IMG_SIZE=600, IMG_QUALITY=0.82;
     var REDIRECT_TO_LIVE=true, REDIRECT_DELAY_MS=700;
     var STORAGE_KEY='bingo_card_last';
     var WEBHOOK_SECRET='';
 
+    /* helpers & state */
     function byId(id){ return document.getElementById(id); }
     var cardBody=byId('cardBody'), toast=byId('toast'), serverStatus=byId('serverStatus');
     var state={ payload:null, marks:new Set(), markKey:'' };
@@ -149,7 +157,6 @@
       byId('gameLockInfo').textContent = pl && pl.game_lock ? ('Lock # '+pl.game_lock) : '';
       byId('timestampInfo').textContent= pl && pl.timestamp ? new Date(pl.timestamp).toLocaleString() : '';
     }
-
     function renderCard(){
       var g=state.payload.grid; cardBody.innerHTML='';
       for (var r=0;r<5;r++){
@@ -165,27 +172,28 @@
       }
       paintMarks();
     }
-
     function toggleMark(r,c){ var k=cellKey(r,c); if(state.marks.has(k)) state.marks.delete(k); else state.marks.add(k); paintMarks(); persistMarks(); }
     function paintMarks(){ var cells=cardBody.querySelectorAll('.cell'); for (var i=0;i<cells.length;i++){ var td=cells[i]; var k=cellKey(+td.dataset.r,+td.dataset.c); if(state.marks.has(k)) td.classList.add('mark'); else td.classList.remove('mark'); } }
     function persistMarks(){ try{ localStorage.setItem(state.markKey, JSON.stringify(Array.from(state.marks))); }catch(e){} }
     function loadMarks(){ try{ var raw=localStorage.getItem(state.markKey); if(!raw) return; var arr=JSON.parse(raw)||[]; state.marks=new Set(arr);}catch(e){} }
 
+    function fitText(ctx,text,maxPx,basePx,minPx){ var size=basePx; ctx.font='bold '+size+'px Arial, Helvetica, sans-serif'; while(ctx.measureText(text).width>maxPx && size>minPx){ size-=1; ctx.font='bold '+size+'px Arial, Helvetica, sans-serif'; } return size; }
     function drawCardToCanvas(grid, marks, handle){
       var size=IMG_SIZE, pad=26, headH=82, w=size, h=size+headH, cell=(size - pad*2)/5;
       var cvs=document.createElement('canvas'); cvs.width=w; cvs.height=h; var ctx=cvs.getContext('2d');
       ctx.fillStyle='#fff'; ctx.fillRect(0,0,w,h);
-      ctx.fillStyle='#111'; ctx.font='bold 32px Arial'; ctx.textAlign='center'; ctx.textBaseline='middle';
-      'BINGO'.split('').forEach(function(ch,i){ ctx.fillText(ch,pad+cell/2+i*cell,28); });
-      if(handle){ ctx.textAlign='center'; ctx.textBaseline='alphabetic'; ctx.fillStyle='#0f172a'; ctx.font='bold 20px Arial'; ctx.fillText(handle,w/2,56); }
-      for(var r=0;r<5;r++){ for(var c=0;c<5;c++){ var x=pad+c*cell, y=headH-6+r*cell, key=r+'-'+c;
-        if(marks.has(key)){ ctx.fillStyle='#16a34a'; ctx.fillRect(x,y,cell,cell);} else { ctx.fillStyle='#fff'; ctx.fillRect(x,y,cell,cell);}
+      ctx.fillStyle='#111'; ctx.font='bold 32px Arial, Helvetica, sans-serif'; ctx.textAlign='center'; ctx.textBaseline='middle';
+      'BINGO'.split('').forEach(function(ch,i){ var x=pad+cell/2+i*cell, y=28; ctx.fillText(ch,x,y); });
+      if(handle){ ctx.textAlign='center'; ctx.textBaseline='alphabetic'; ctx.fillStyle='#0f172a'; var maxW=size - pad*2; var sizePx=fitText(ctx,handle,maxW,22,12); ctx.font='bold '+sizePx+'px Arial, Helvetica, sans-serif'; ctx.fillText(handle,w/2,56); }
+      for (var r=0;r<5;r++){ for (var c=0;c<5;c++){ var x=pad+c*cell, y=headH-6+r*cell, key=r+'-'+c;
+        if(marks.has(key)){ ctx.fillStyle='#16a34a'; ctx.fillRect(x,y,cell,cell);} else { ctx.fillStyle='#fff'; ctx.fillRect(x,y,cell,cell); }
         ctx.strokeStyle='#111'; ctx.lineWidth=2; ctx.strokeRect(x,y,cell,cell);
-        var v=grid[r][c]; ctx.fillStyle=marks.has(key)?'#fff':'#111'; ctx.font='bold 26px Arial'; ctx.textAlign='center'; ctx.textBaseline='middle'; ctx.fillText((v==null||v==='')?'':String(v), x+cell/2, y+cell/2);
+        var v=grid[r][c]; ctx.fillStyle=marks.has(key)?'#fff':'#111'; ctx.font='bold 26px Arial, Helvetica, sans-serif'; ctx.textAlign='center'; ctx.textBaseline='middle'; ctx.fillText((v==null||v==='')?'':String(v), x+cell/2, y+cell/2);
       }}
       return cvs;
     }
 
+    /* submit to Google (iframe target) */
     function fillAndSubmitForm(fields){
       var form=document.getElementById('bingoClaimForm');
       byId('claim_secret').value      = WEBHOOK_SECRET || '';
@@ -196,11 +204,13 @@
       byId('claim_cardNumbers').value = fields.cardNumbers || '';
       byId('claim_imageData').value   = fields.imageData || '';
       byId('claim_marks').value       = fields.marks || '';
-      byId('claim_tiktok').value      = fields.tiktok || ''; // ✅ TikTok
+      byId('claim_tiktok').value      = fields.tiktok || ''; // TikTok handle
 
+      // show server reply when iframe loads
       var sink=document.getElementById('silent_receiver');
       var showReply=function(){ serverStatus.style.display='block'; sink.removeEventListener('load',showReply); };
       sink.addEventListener('load',showReply);
+
       form.submit();
     }
 
@@ -210,12 +220,13 @@
       if(state.marks.size===0 && !confirm('No marks on your card. Send claim anyway?')) return;
 
       btn.disabled=true; var old=btn.textContent; btn.textContent='Sending…';
+
       var user=pl.user || {};
       var tiktokHandle=(user.tiktok||'').trim();
       var imgData='';
       if(ATTACH_IMAGE){
-        var canvas=drawCardToCanvas(pl.grid,state.marks,tiktokHandle);
-        imgData=canvas.toDataURL('image/jpeg',IMG_QUALITY);
+        var canvas=drawCardToCanvas(pl.grid, state.marks, tiktokHandle);
+        imgData=canvas.toDataURL('image/jpeg', IMG_QUALITY);
       }
 
       fillAndSubmitForm({
@@ -226,7 +237,7 @@
         cardNumbers: flattenGridToCsv(pl.grid),
         imageData: imgData,
         marks: Array.from(state.marks).join('|'),
-        tiktok: tiktokHandle // ✅ pass TikTok
+        tiktok: tiktokHandle
       });
 
       toast.style.display='block';
@@ -234,11 +245,14 @@
       else { setTimeout(function(){ btn.disabled=false; btn.textContent=old; toast.style.display='none'; }, 2000); }
     }
 
+    /* boot */
     function boot(){
       byId('joinLiveLink').href=LIVE_URL;
+
       var pl=loadPayload();
       if(!pl || !pl.grid || !pl.grid.length){
-        document.getElementById('noCardMsg').style.display='block'; return;
+        document.getElementById('noCardMsg').style.display='block';
+        return;
       }
       state.payload=pl;
       state.markKey=gridHash(pl.grid);
@@ -246,12 +260,12 @@
     }
 
     if(document.readyState==='loading'){
-      document.addEventListener('DOMContentLoaded',function(){
-        document.getElementById('winBtn')?.addEventListener('click',function(e){ sendClaim(e.currentTarget); });
+      document.addEventListener('DOMContentLoaded', function(){
+        document.getElementById('winBtn')?.addEventListener('click', function(e){ sendClaim(e.currentTarget); });
         boot();
       });
     }else{
-      document.getElementById('winBtn')?.addEventListener('click',function(e){ sendClaim(e.currentTarget); });
+      document.getElementById('winBtn')?.addEventListener('click', function(e){ sendClaim(e.currentTarget); });
       boot();
     }
   })();
