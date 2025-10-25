@@ -121,6 +121,8 @@
     <input type="hidden" name="cardNumbers" id="claim_cardNumbers">
     <input type="hidden" name="notes" id="claim_notes" value="Bingo claim via game-room">
     <input type="hidden" name="imageData" id="claim_imageData">
+    <!-- NEW: send marks for server win-check -->
+    <input type="hidden" name="marks" id="claim_marks">
     <input type="hidden" name="secret" id="claim_secret" value="">
   </form>
 
@@ -132,7 +134,7 @@
     /* knobs */
     var TIKTOK_HANDLE='ricpatton';
     var LIVE_URL='https://www.tiktok.com/@'+TIKTOK_HANDLE+'/live';
-    var ATTACH_IMAGE=false; // flip to true later once rows are landing steady
+    var ATTACH_IMAGE=true; // ✅ turned ON
     var IMG_SIZE=600, IMG_FORMAT='image/jpeg', IMG_QUALITY=0.82;
     var REDIRECT_TO_LIVE=true, REDIRECT_DELAY_MS=700;
     var STORAGE_KEY='bingo_card_last';
@@ -205,6 +207,8 @@
       byId('claim_cardId').value      = fields.cardId || '';
       byId('claim_cardNumbers').value = fields.cardNumbers || '';
       byId('claim_imageData').value   = fields.imageData || '';
+      // NEW: include marks
+      byId('claim_marks').value       = fields.marks || '';
 
       // When server responds, iframe loads → show “server replied”
       var sink=document.getElementById('silent_receiver');
@@ -221,16 +225,25 @@
 
       btn.disabled=true; var old=btn.textContent; btn.textContent='Sending…';
 
-      var user=pl.user || {}; var tiktokHandle=normalizeHandle(user.tiktok || ''); var imgData='';
-      if(ATTACH_IMAGE){ var canvas=drawCardToCanvas(pl.grid, state.marks, tiktokHandle); imgData=canvas.toDataURL('image/jpeg', IMG_QUALITY); }
+      var user=pl.user || {}; 
+      var tiktokHandle=normalizeHandle(user.tiktok || ''); 
+      var imgData='';
 
+      // ✅ Create the JPEG proof
+      if(ATTACH_IMAGE){
+        var canvas=drawCardToCanvas(pl.grid, state.marks, tiktokHandle);
+        imgData=canvas.toDataURL('image/jpeg', IMG_QUALITY);
+      }
+
+      // ✅ Send everything, including the marks
       fillAndSubmitForm({
         gameId: pl.game_lock || 'game-room-1',
         playerName: user.name || 'Guest',
         email: user.email || '',
         cardId: cardIdFromGrid(pl.grid),
         cardNumbers: flattenGridToCsv(pl.grid),
-        imageData: imgData
+        imageData: imgData,
+        marks: Array.from(state.marks).join('|') // "r-c|r-c|..."
       });
 
       toast.style.display='block';
@@ -265,4 +278,3 @@
   </script>
 </body>
 </html>
-
