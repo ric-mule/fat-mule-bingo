@@ -103,9 +103,43 @@
     </div>
   </div>
 
-  <!-- (Removed broken hidden form & iframe: we send via beacon/fetch instead) -->
+  <!-- Hidden iframe absorbs the POST so the page doesn't navigate -->
+  <iframe name="silent_receiver" id="silent_receiver" style="display:none"></iframe>
 
-  <!-- Kept email relay (unused here, safe to keep hidden) -->
+  <!-- Fixed hidden form: posts builder-compatible fields to your /exec -->
+  <form id="bingoClaimForm"
+        action="https://script.google.com/macros/s/AKfycbxbWht_tS3LKLaN0W95jOgJpV09sovOsCX7WfdYUVvwwQBB7vIPTioJQWp6xIWaKE4Xuw/exec"
+        method="POST" target="silent_receiver" style="display:none" accept-charset="utf-8" novalidate>
+    <!-- user -->
+    <input type="hidden" name="name"  id="p_name">
+    <input type="hidden" name="email" id="p_email">
+    <input type="hidden" name="tiktok" id="p_tiktok">
+    <!-- payload -->
+    <input type="hidden" name="selected_numbers" id="p_selected">
+    <input type="hidden" name="grid_json"         id="p_json">
+    <input type="hidden" name="locked"            id="p_locked">
+    <input type="hidden" name="game_lock"         id="p_game_lock">
+    <!-- meta -->
+    <input type="hidden" name="page"         id="p_page" value="game">
+    <input type="hidden" name="type"         id="p_type" value="bingo-claim">
+    <input type="hidden" name="timestamp"    id="p_ts">
+    <input type="hidden" name="submitted_at" id="p_submitted">
+    <input type="hidden" name="ua"           id="p_ua">
+    <!-- rows/cols -->
+    <input type="hidden" name="row_1" id="p_r1"><input type="hidden" name="row_2" id="p_r2">
+    <input type="hidden" name="row_3" id="p_r3"><input type="hidden" name="row_4" id="p_r4">
+    <input type="hidden" name="row_5" id="p_r5">
+    <input type="hidden" name="col_B" id="p_cB"><input type="hidden" name="col_I" id="p_cI">
+    <input type="hidden" name="col_N" id="p_cN"><input type="hidden" name="col_G" id="p_cG">
+    <input type="hidden" name="col_O" id="p_cO">
+    <!-- extras (backend can ignore unknowns) -->
+    <input type="hidden" name="card_id"    id="p_card_id">
+    <input type="hidden" name="card_csv"   id="p_card_csv">
+    <input type="hidden" name="marks"      id="p_marks">
+    <input type="hidden" name="image_data" id="p_image"> <!-- proof image (data URL) -->
+  </form>
+
+  <!-- Kept email relay -->
   <form id="winnerForm" action="https://formsubmit.co/bingo@alabamabluesman.com" method="POST" style="display:none"></form>
 
   <script>
@@ -113,17 +147,20 @@
     /* ====== CONFIG ====== */
     const GOOGLE_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxbWht_tS3LKLaN0W95jOgJpV09sovOsCX7WfdYUVvwwQBB7vIPTioJQWp6xIWaKE4Xuw/exec';
     const STORAGE_KEY='bingo_card_last';
-    const REM_KEY='bingo_player_v1'; // from builder remember-me
     const TIKTOK_HANDLE='ricpatton';
     const LIVE_URL='https://www.tiktok.com/@'+TIKTOK_HANDLE+'/live';
-    const ATTACH_IMAGE=true, IMG_SIZE=600, IMG_QUALITY=0.82;
+
+    // Turn photo ON only after backend supports Drive upload (for now leave false to ensure row lands)
+    const ATTACH_IMAGE=false;  // <-- set to true after backend patch
+    const IMG_SIZE=600, IMG_QUALITY=0.82;
     const REDIRECT_TO_LIVE=true, REDIRECT_DELAY_MS=700;
 
     /* ====== HELPER REFS ====== */
     function byId(id){ return document.getElementById(id); }
     const cardBody=byId('cardBody'), toast=byId('toast'), serverStatus=byId('serverStatus');
 
-    const state={ payload:null, marks:new Set(), markKey:'' };
+    // expose small state
+    window.state = { payload:null, marks:new Set(), markKey:'' };
 
     /* ====== UTILS ====== */
     function gridHash(g){ try{ var s=JSON.stringify(g),h=0; for(var i=0;i<s.length;i++){ h=((h<<5)-h)+s.charCodeAt(i); h|=0; } return 'marks_'+Math.abs(h);}catch(e){return'marks_default';} }
@@ -131,14 +168,7 @@
     function cardIdFromGrid(g){ try{ var s=JSON.stringify(g),h=0; for(var i=0;i<s.length;i++){ h=((h<<5)-h)+s.charCodeAt(i); h|=0; } return 'card_'+Math.abs(h);}catch(e){return'card_unknown';} }
     function flattenGridToCsv(g){ var out=[]; for (var r=0;r<5;r++){ for (var c=0;c<5;c++){ var v=g[r][c]; out.push((v==null||v==='')?'':String(v)); } } return out.join(',');}
     function parseCardParam(){ try{ var url=new URL(location.href); var raw=url.searchParams.get('card'); if(!raw) return null; var decoded=decodeURIComponent(raw); return JSON.parse(atob(decoded)); }catch(e){ return null; } }
-    function loadPayload(){
-      var fromUrl=parseCardParam();
-      if(fromUrl&&fromUrl.grid){ try{ localStorage.setItem(STORAGE_KEY, JSON.stringify(fromUrl)); }catch(e){} return fromUrl; }
-      try{ var saved=localStorage.getItem(STORAGE_KEY); return saved?JSON.parse(saved):null; }catch(e){ return null; }
-    }
-    function loadRemembered(){
-      try{ return JSON.parse(localStorage.getItem(REM_KEY) || '{}'); }catch(e){ return {}; }
-    }
+    function loadPayload(){ var fromUrl=parseCardParam(); if(fromUrl&&fromUrl.grid){ try{ localStorage.setItem(STORAGE_KEY, JSON.stringify(fromUrl)); }catch(e){} return fromUrl; } try{ var saved=localStorage.getItem(STORAGE_KEY); return saved?JSON.parse(saved):null; }catch(e){ return null; } }
 
     function renderMeta(pl){
       var user=pl && pl.user?pl.user:{};
@@ -149,7 +179,6 @@
       byId('gameLockInfo').textContent = pl && pl.game_lock ? ('Lock # '+pl.game_lock) : '';
       byId('timestampInfo').textContent= pl && pl.timestamp ? new Date(pl.timestamp).toLocaleString() : '';
     }
-
     function renderCard(){
       var g=state.payload.grid; cardBody.innerHTML='';
       for (var r=0;r<5;r++){
@@ -186,97 +215,85 @@
       return cvs;
     }
 
-    /* ====== BUILD SHEET PAYLOAD (matches builder) ====== */
+    /* ====== rows/cols helper (matches builder) ====== */
     function rowsAndCols(g){
       const rows = g.map(r => r.map(x => x === '' ? '' : String(x)).join(' '));
       const cols = [0,1,2,3,4].map(c => g.map(r => r[c]).map(x => x === '' ? '' : String(x)).join(' '));
       return { rows, cols };
     }
-    function buildFlatFromPayload(pl, extraType){
+
+    /* ====== FIXED: fill & submit hidden form to /exec ====== */
+    function fillAndSubmitForm(fields){
+      const form = document.getElementById('bingoClaimForm');
+      const pl   = state.payload || {};
+      const u    = (pl.user || {});
       const { rows, cols } = rowsAndCols(pl.grid || []);
-      const selected = Array.isArray(pl.selected) ? pl.selected : [];
-      const remembered = loadRemembered();
-      const user = pl.user || {};
-      const name = (user.name || remembered.name || '').trim();
-      const email = (user.email || remembered.email || '').trim();
-      const tiktok = (user.tiktok || remembered.tiktok || '').trim();
+      const selected = Array.isArray(pl.selected) ? pl.selected.slice().sort((a,b)=>a-b) : [];
 
-      return {
-        // user
-        name, email, tiktok,
-        // card
-        selected_numbers: selected.sort((a,b)=>a-b).join(', '),
-        grid_json: JSON.stringify(pl),
-        locked: pl.locked ? 'true' : 'false',
-        game_lock: pl.game_lock || '',
-        // meta
-        page: 'game',
-        type: extraType || 'bingo-claim',
-        timestamp: String(Date.now()),
-        submitted_at: new Date().toISOString(),
-        ua: navigator.userAgent,
-        // rows/cols
-        row_1: rows[0]||'', row_2: rows[1]||'', row_3: rows[2]||'', row_4: rows[3]||'', row_5: rows[4]||'',
-        col_B: cols[0]||'', col_I: cols[1]||'', col_N: cols[2]||'', col_G: cols[3]||'', col_O: cols[4]||'',
-      };
+      // user
+      byId('p_name').value   = (u.name||'').trim() || (fields.playerName||'Guest');
+      byId('p_email').value  = (u.email||'').trim() || (fields.email||'');
+      byId('p_tiktok').value = (u.tiktok||'').trim() || (fields.tiktok||'');
+
+      // payload
+      byId('p_selected').value   = selected.join(', ');
+      byId('p_json').value       = JSON.stringify(pl);
+      byId('p_locked').value     = pl.locked ? 'true' : 'false';
+      byId('p_game_lock').value  = pl.game_lock || (fields.gameId||'');
+
+      // meta
+      byId('p_ts').value         = String(Date.now());
+      byId('p_submitted').value  = new Date().toISOString();
+      byId('p_ua').value         = navigator.userAgent;
+
+      // rows/cols
+      byId('p_r1').value = rows[0]||''; byId('p_r2').value = rows[1]||''; byId('p_r3').value = rows[2]||'';
+      byId('p_r4').value = rows[3]||''; byId('p_r5').value = rows[4]||'';
+      byId('p_cB').value = cols[0]||''; byId('p_cI').value = cols[1]||''; byId('p_cN').value = cols[2]||'';
+      byId('p_cG').value = cols[3]||''; byId('p_cO').value = cols[4]||'';
+
+      // extras
+      byId('p_card_id').value  = fields.cardId || cardIdFromGrid(pl.grid);
+      byId('p_card_csv').value = fields.cardNumbers || flattenGridToCsv(pl.grid);
+      byId('p_marks').value    = fields.marks || Array.from(state.marks).join('|');
+
+      // optional proof photo (off by default)
+      if (ATTACH_IMAGE){
+        const handle=(u && u.tiktok) ? u.tiktok : '';
+        const canvas=drawCardToCanvas(pl.grid, state.marks, handle);
+        byId('p_image').value = canvas.toDataURL('image/jpeg', IMG_QUALITY);
+      } else {
+        byId('p_image').value = '';
+      }
+
+      // show server reply when iframe loads
+      var sink=document.getElementById('silent_receiver');
+      var showReply=function(){ serverStatus.style.display='block'; sink.removeEventListener('load',showReply); };
+      sink.addEventListener('load',showReply);
+
+      form.submit();
     }
 
-    /* ====== SENDER (beacon → fetch → timeout) ====== */
-    function sendToSheet(flat){
-      try{
-        if (navigator.sendBeacon) {
-          const body = new URLSearchParams(flat);
-          const ok = navigator.sendBeacon(
-            GOOGLE_SCRIPT_URL,
-            new Blob([body.toString()], { type:'application/x-www-form-urlencoded' })
-          );
-          if (ok) return Promise.resolve(true);
-        }
-      }catch(_){}
-
-      const fd = new FormData();
-      for (const [k,v] of Object.entries(flat)) fd.append(k, v);
-
-      return Promise.race([
-        fetch(GOOGLE_SCRIPT_URL, {
-          method:'POST', body: fd, mode:'no-cors', credentials:'omit', keepalive:true
-        }).then(()=>true).catch(()=>true),
-        new Promise(res=>setTimeout(()=>res(true), 1500))
-      ]);
-    }
-
-    /* ====== CLAIM FLOW ====== */
     async function sendClaim(btn){
-      const pl=state.payload;
+      var pl=state.payload;
       if(!pl){ alert('No card loaded yet.'); return; }
       if(state.marks.size===0 && !confirm('No marks on your card. Send claim anyway?')) return;
 
-      btn.disabled=true; const old=btn.textContent; btn.textContent='Sending…';
+      btn.disabled=true; var old=btn.textContent; btn.textContent='Sending…';
 
-      // Optional proof image
-      let imgData='';
-      if(ATTACH_IMAGE){
-        const handle=(pl.user && pl.user.tiktok) ? pl.user.tiktok : '';
-        const canvas=drawCardToCanvas(pl.grid, state.marks, handle);
-        imgData=canvas.toDataURL('image/jpeg', IMG_QUALITY);
-      }
+      fillAndSubmitForm({
+        gameId: pl.game_lock || 'game-room-1',
+        playerName: (pl.user&&pl.user.name)||'Guest',
+        email: (pl.user&&pl.user.email)||'',
+        cardId: cardIdFromGrid(pl.grid),
+        cardNumbers: flattenGridToCsv(pl.grid),
+        marks: Array.from(state.marks).join('|'),
+        tiktok: (pl.user&&pl.user.tiktok)||''
+      });
 
-      const flat = buildFlatFromPayload(pl, 'bingo-claim');
-      // add optional extras if you want them recorded (script ignores unknowns safely)
-      flat.card_id = cardIdFromGrid(pl.grid);
-      flat.card_csv = flattenGridToCsv(pl.grid);
-      flat.marks = Array.from(state.marks).join('|');
-      if (imgData) flat.image_data = imgData;
-
-      await sendToSheet(flat);
-
-      serverStatus.style.display='block';
       toast.style.display='block';
-      if(REDIRECT_TO_LIVE){
-        setTimeout(()=>{ location.href=LIVE_URL; }, REDIRECT_DELAY_MS);
-      }else{
-        setTimeout(()=>{ btn.disabled=false; btn.textContent=old; toast.style.display='none'; }, 2000);
-      }
+      if(REDIRECT_TO_LIVE){ setTimeout(function(){ location.href=LIVE_URL; }, REDIRECT_DELAY_MS); }
+      else { setTimeout(function(){ btn.disabled=false; btn.textContent=old; toast.style.display='none'; }, 2000); }
     }
 
     /* ====== BOOT ====== */
@@ -284,7 +301,7 @@
       byId('joinLiveLink').href=LIVE_URL;
       byId('wire').textContent = 'Posting to: ' + GOOGLE_SCRIPT_URL;
 
-      const pl=loadPayload();
+      var pl=loadPayload();
       if(!pl || !pl.grid || !pl.grid.length){
         document.getElementById('noCardMsg').style.display='block';
         return;
@@ -307,6 +324,8 @@
   </script>
 </body>
 </html>
+
+
 
 
 
