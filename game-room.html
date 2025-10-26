@@ -106,10 +106,15 @@
   <!-- Hidden iframe absorbs the POST so the page doesn't navigate -->
   <iframe name="silent_receiver" id="silent_receiver" style="display:none"></iframe>
 
-  <!-- Fixed hidden form: posts builder-compatible fields to your /exec -->
+  <!-- Hidden form: now with multipart so big images go through -->
   <form id="bingoClaimForm"
         action="https://script.google.com/macros/s/AKfycbxbWht_tS3LKLaN0W95jOgJpV09sovOsCX7WfdYUVvwwQBB7vIPTioJQWp6xIWaKE4Xuw/exec"
-        method="POST" target="silent_receiver" style="display:none" accept-charset="utf-8" novalidate>
+        method="POST"
+        target="silent_receiver"
+        enctype="multipart/form-data"
+        style="display:none"
+        accept-charset="utf-8"
+        novalidate>
     <!-- user -->
     <input type="hidden" name="name"  id="p_name">
     <input type="hidden" name="email" id="p_email">
@@ -132,7 +137,7 @@
     <input type="hidden" name="col_B" id="p_cB"><input type="hidden" name="col_I" id="p_cI">
     <input type="hidden" name="col_N" id="p_cN"><input type="hidden" name="col_G" id="p_cG">
     <input type="hidden" name="col_O" id="p_cO">
-    <!-- extras (backend can ignore unknowns) -->
+    <!-- extras -->
     <input type="hidden" name="card_id"    id="p_card_id">
     <input type="hidden" name="card_csv"   id="p_card_csv">
     <input type="hidden" name="marks"      id="p_marks">
@@ -150,9 +155,9 @@
     const TIKTOK_HANDLE='ricpatton';
     const LIVE_URL='https://www.tiktok.com/@'+TIKTOK_HANDLE+'/live';
 
-    // Turn photo ON only after backend supports Drive upload (for now leave false to ensure row lands)
-    const ATTACH_IMAGE=true;  // <-- set to true after backend patch
-    const IMG_SIZE=600, IMG_QUALITY=0.82;
+    // Photo capture ON, size/quality trimmed a bit
+    const ATTACH_IMAGE=true;
+    const IMG_SIZE=520, IMG_QUALITY=0.75;
     const REDIRECT_TO_LIVE=true, REDIRECT_DELAY_MS=700;
 
     /* ====== HELPER REFS ====== */
@@ -222,7 +227,7 @@
       return { rows, cols };
     }
 
-    /* ====== FIXED: fill & submit hidden form to /exec ====== */
+    /* ====== fill & submit hidden form to /exec ====== */
     function fillAndSubmitForm(fields){
       const form = document.getElementById('bingoClaimForm');
       const pl   = state.payload || {};
@@ -257,11 +262,17 @@
       byId('p_card_csv').value = fields.cardNumbers || flattenGridToCsv(pl.grid);
       byId('p_marks').value    = fields.marks || Array.from(state.marks).join('|');
 
-      // optional proof photo (off by default)
+      // proof photo
       if (ATTACH_IMAGE){
         const handle=(u && u.tiktok) ? u.tiktok : '';
         const canvas=drawCardToCanvas(pl.grid, state.marks, handle);
-        byId('p_image').value = canvas.toDataURL('image/jpeg', IMG_QUALITY);
+        const dataUrl = canvas.toDataURL('image/jpeg', IMG_QUALITY);
+        byId('p_image').value = dataUrl;
+
+        // Show rough size so we know it attached
+        const kb = Math.round((dataUrl.length * 3/4) / 1024);
+        serverStatus.textContent = `✅ Claim prepared — photo about ${kb} KB`;
+        serverStatus.style.display = 'block';
       } else {
         byId('p_image').value = '';
       }
@@ -324,14 +335,3 @@
   </script>
 </body>
 </html>
-
-
-
-
-
-
-
-
-
-
-
